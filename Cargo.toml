@@ -123,3 +123,9 @@ required-features = ["native"]
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+
+# TEMPORARY: build against the maintainer's turbo-vision main until the next
+# release is on crates.io. Drop this block (and raise the version above)
+# before merging.
+[patch.crates-io]
+turbo-vision = { git = "https://github.com/aovestdipaperino/turbo-vision-4-rust", branch = "main" }
