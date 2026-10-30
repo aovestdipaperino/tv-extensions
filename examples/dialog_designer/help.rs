@@ -11,8 +11,19 @@ const CHANGES: &str = "\n\nReacting: with a name, your program can run code each
 
 /// The controls that have a value, and so can be reacted to.
 const VALUED: [&str; 13] = [
-    "input", "auto_complete", "memo", "spinner", "slider", "check_box", "check_boxes",
-    "radio_buttons", "combo_box", "list_box", "tree", "table", "dual_list",
+    "input",
+    "auto_complete",
+    "memo",
+    "spinner",
+    "slider",
+    "check_box",
+    "check_boxes",
+    "radio_buttons",
+    "combo_box",
+    "list_box",
+    "tree",
+    "table",
+    "dual_list",
 ];
 
 /// The help on a control type (the JSON `type`).
@@ -244,7 +255,12 @@ pub fn topics(keys: &Keys) -> Vec<Topic> {
                 JsonDialog::load reads.\n\
              \n\
              Give a control a name and its value comes back under that name\n\
-             when the dialog is accepted.",
+             when the dialog is accepted.\n\
+             \n\
+             Ctrl+click or a band selects several controls, to move them\n\
+             together or line them up with the Arrange menu. Insert >\n\
+             Control template inserts ready-made groups, such as OK and\n\
+             Cancel; Edit > Save as control template keeps your own.",
         ),
         topic("Keys", &crate::keys::help(keys)),
         topic(
@@ -258,8 +274,31 @@ pub fn topics(keys: &Keys) -> Vec<Topic> {
              the whole dialog about the desktop, and so does dragging its\n\
              frame.\n\
              \n\
+             To move or delete several controls at once, Ctrl+click each\n\
+             (Shift or Alt work too), or drag a band over an empty part of\n\
+             the dialog, a group box or a tab page: its controls wholly\n\
+             inside the band are selected. Then\n\
+             drag one, or press the arrows, and they move together; Del\n\
+             deletes them all. Controls in the same container go together.\n\
+             \n\
              The inspector at the right lists every control as a tree. It is\n\
              the way to reach one hidden under another or on a tab page.",
+        ),
+        topic(
+            "Arranging",
+            "The Arrange menu lines up the selected controls, as drawing\n\
+             programs do. With several selected, Align left, right, top or\n\
+             bottom edges moves them to the edge of the box around them, and\n\
+             Center horizontally or vertically to its middle. With one\n\
+             control alone they use its container instead: Center\n\
+             horizontally centres it in the dialog, or in its group box or\n\
+             tab page.\n\
+             \n\
+             Same width and Same height give them all the size of the first\n\
+             one selected. Distribute across or down spaces three or more\n\
+             evenly: the outermost two stay, and the gaps between them all\n\
+             become equal. One or two are spread over the container, with\n\
+             equal gaps to its edges too. Each is one undo step.",
         ),
         topic(
             "Containers",
@@ -270,8 +309,10 @@ pub fn topics(keys: &Keys) -> Vec<Topic> {
              \n\
              To put a control in a container, use Edit > Move to container,\n\
              or drag its row in the inspector onto the container's row.\n\
+             Drag a container by its frame or its tab strip; dragging\n\
+             inside it draws a band to select what it holds.\n\
              Selecting a container highlights its frame only, so you can see\n\
-             what you are about to move.",
+             what you are about to move; a line drawn as a box too.",
         ),
         topic(
             "Reacting to changes",
@@ -342,6 +383,22 @@ pub fn topics(keys: &Keys) -> Vec<Topic> {
              Samples come with the designer: login, contact form, find and\n\
              replace, settings, confirm, about, list picker, table browser\n\
              and progress.",
+        ),
+        topic(
+            "Control templates",
+            "A control template is a group of controls to insert again, such\n\
+             as OK and Cancel, or a label with its input. Select them\n\
+             (Ctrl+click or a band), then Edit > Save as control template\n\
+             and give it a name.\n\
+             \n\
+             Insert > Control template lists them: Insert puts one in the\n\
+             dialog, below the selection, with fresh names and its label\n\
+             links kept, all selected to drag into place. Rename and Delete\n\
+             look after your own, kept in templates/controls.\n\
+             \n\
+             The samples come with the designer: OK / Cancel, OK / Cancel /\n\
+             Help, Yes / No / Cancel, Label and input, Search, Sign in\n\
+             fields and Address. They cannot be renamed or deleted.",
         ),
         topic(
             "Testing and using it",
@@ -567,8 +624,11 @@ mod tests {
     #[test]
     fn the_contents_lists_the_topics_then_every_control() {
         let all = topics(&crate::keys::PC);
-        assert_eq!(all.len(), 9 + KINDS.len());
-        assert!(all.iter().all(|t| !t.title.is_empty() && !t.text.is_empty()));
+        assert_eq!(all.len(), 11 + KINDS.len());
+        assert!(
+            all.iter()
+                .all(|t| !t.title.is_empty() && !t.text.is_empty())
+        );
         assert_eq!(all.last().unwrap().title, "Control: error line");
         assert!(all[1].text.contains("F9"));
     }

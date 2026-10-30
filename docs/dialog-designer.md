@@ -9,13 +9,17 @@ every control of turbo-vision core plus this crate's `AutoComplete` and
 Two parts, feature `dialog`:
 
 - **The designer**, `examples/dialog_designer`: a Turbo Vision application
-  that edits a dialog spec.
+  that edits a dialog spec. Select one control or several, line them up
+  with the Arrange menu, and keep dialogs and groups of controls as
+  templates to start from or insert again.
 - **The runtime**, `tv_extensions::dialog_spec`: `DialogSpec`, the JSON
   file, and `JsonDialog`, the live dialog built from it.
 
+The `dialog` feature is not in a release yet, so depend on `main`:
+
 ```toml
 [dependencies]
-tv-extensions = { version = "0.3", features = ["dialog"] }
+tv-extensions = { git = "https://github.com/aovestdipaperino/tv-extensions", branch = "main", features = ["dialog"] }
 ```
 
 ## The designer
@@ -27,7 +31,7 @@ cargo run --example dialog_designer --features native,dialog -- customer.json
 The file is opened if it exists and created on the first save if not.
 
 ```text
-  File  Edit  Insert  Dialog  View  Help
+  File  Edit  Arrange  Insert  Dialog  View  Help
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░╔═[■]══════ Inspector ═════[▲]═╗░░
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░║(not saved)                   ║░░
 ░░░╔═[■]═════════════════ Customer ═══════════════════╗░║                             ▲║░░
@@ -78,12 +82,16 @@ saving it for use in code. Try each step in the designer behind the window.
 |----|-------|------|
 | Select a control | click it | Tab / Shift+Tab, in tab order |
 | Select the container | click empty space | Esc (a page's control → its tabs → the dialog) |
-| Move it | drag it | arrows |
+| Select several | Ctrl+click (or Shift or Alt) each, or drag a band over empty space (in the dialog, a group box or a tab page) | |
+| Move it (or all those selected) | drag it | arrows |
 | Resize it | drag its yellow corner | Shift+arrows or Ctrl+arrows |
 | Resize the dialog | drag the frame's bottom-right corner | select the dialog, then Shift+arrows |
 | Insert a control | right click | Ins, or the Insert menu |
 | Edit its properties | double click | Enter |
-| Delete / duplicate | | Del / Ctrl+D |
+| Align, size or space them | | the Arrange menu |
+| Delete (all those selected) / duplicate | | Del / Ctrl+D |
+| Keep them as a control template | | Edit > Save as control template... |
+| Insert a control template | | Insert > Control template... |
 | Earlier / later in tab order | | F7 / F8 |
 | Set the whole tab order | | F5 |
 | Show the tab order | | Ctrl+O |
@@ -122,13 +130,47 @@ arrows) is the same. The designer picks the set from the operating system;
 `DIALOG_DESIGNER_KEYS=mac` or `=pc` overrides it, for a Mac with a full
 keyboard or a PC terminal that sends Ctrl+letters.
 
+Save asks for a file the first time, and File > Save as every time, in a
+file dialog that lists the `.json` files and starts in the folder of the
+last save. A name typed without an extension gets `.json`, and another
+file already there is replaced only after asking.
+
 A drag is one undo step. Moves and resizes keep a control inside its
 container, the dialog or its tab page.
+
+Several controls can be selected at once, to move or delete them
+together: Ctrl+click adds a control to the selection or takes it out,
+and a band dragged over an empty part of the dialog, a group box or a tab
+page selects the controls of that container that lie wholly inside it.
+(So a container is dragged by its frame or its tab strip; a click on its
+empty inside selects it.) Only controls in the same container go
+together; a Ctrl+click on one elsewhere selects it alone. Drag any of
+them, or press the arrows, and they all move, as far as the one nearest
+the edge can. A plain click on one selects it alone. Many macOS
+terminals turn Ctrl+click into a right click, and keep Shift+click for
+selecting text; Alt+click (Option) or the band works there.
+
+### Arranging
+
+The Arrange menu lines the selection up, as drawing programs do:
+
+| Item | With several selected | With one alone |
+|------|-----------------------|----------------|
+| Align left / right edges | to the left or right of the box around them | to the container's left or right |
+| Center horizontally | to the middle of that box, across | centred across the container |
+| Align top / bottom edges | to its top or bottom | to the container's top or bottom |
+| Center vertically | to its middle, down | centred down the container |
+| Same width / Same height | the size of the first one selected | |
+| Distribute across / down | three or more spaced evenly; the outermost two stay | one or two spread over the container, the gaps to its edges equal too |
+
+The container is the dialog, a group box or a tab page. Each item is one
+undo step, and keeps the controls inside their container.
 
 ### Inserting
 
 A new control goes after the selected one in tab order, just below it, and
-gets a name of its type (`input1`, `combo2`). Two shortcuts follow how
+gets a name of its type (`input1`, `combo2`). To insert a whole group at
+once, such as OK and Cancel, use a [control template](#control-templates). Two shortcuts follow how
 dialogs are built:
 
 - **After a label**, a control with a value goes to the label's right on the
@@ -145,7 +187,7 @@ Buttons come as OK first (the default button), then Cancel, then actions
 named `action1`, `action2`, …
 
 A selected container is marked by its frame only, so you can still see
-what is inside it.
+what is inside it. So is a line drawn as a box.
 
 The Insert menu on the bar lists the sections of controls, and Ins opens
 every control type at once, a line between the sections. On a screen too
@@ -213,6 +255,27 @@ F3 and edit it. The repository's `templates` folder has samples to start
 from: `login`, `contact_form`, `find_replace`, `settings` (tabs),
 `confirm`, `about`, `list_picker` (a dual list), `table_browser` (a table
 with Add, Edit and Delete) and `progress`.
+
+### Control templates
+
+A control template is a group of controls kept to insert again: OK and
+Cancel, a label with its input, a search field with its button. Select
+the controls (Ctrl+click or a band), then Edit > Save as control
+template... asks for a name. Insert > Control template... opens the
+control template manager: Insert puts the one selected into the dialog,
+below the selected control or at the top left, kept together, with names
+not in use and the label links among them kept. The inserted controls
+come selected together, ready to drag or arrange into place.
+
+The designer comes with samples: OK / Cancel, OK / Cancel / Help,
+Yes / No / Cancel, Label and input, Search, Sign in fields and Address
+(a group box with street, city and ZIP). They are built in: they can be
+inserted, not renamed or deleted, and their names cannot be reused. Your
+own are files in the `controls` folder of the templates folder
+(`templates/controls`), where Rename and Delete look after them.
+
+A label linked to a control outside the selection loses its link in the
+template.
 
 ### Testing
 

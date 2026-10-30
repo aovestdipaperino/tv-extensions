@@ -25,11 +25,21 @@ pub const MAX_DEPTH: usize = 4;
 /// controls to look in (`slot`: a group box has one, tabs have one per
 /// page; the first step's is always 0, the dialog's own list) and the
 /// control's index in it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Place {
     steps: [(usize, usize); MAX_DEPTH],
     len: usize,
 }
+
+// Two places are the same when their steps are: `owner` leaves the steps
+// past `len` as they were, so the whole array is not compared.
+impl PartialEq for Place {
+    fn eq(&self, other: &Self) -> bool {
+        self.steps() == other.steps()
+    }
+}
+
+impl Eq for Place {}
 
 impl Place {
     /// The control at `index` in the dialog's own list.
@@ -138,6 +148,20 @@ impl Container {
     }
 }
 
+/// Where Arrange lines the selection up: to the edges or the middle of the
+/// box around the controls selected, or of the container for one alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arrange {
+    Left,
+    Right,
+    /// The middle, across.
+    Center,
+    Top,
+    Bottom,
+    /// The middle, down.
+    Middle,
+}
+
 /// What is selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sel {
@@ -226,6 +250,9 @@ pub fn section(n: usize) -> std::ops::Range<usize> {
 pub struct Design {
     pub spec: DialogSpec,
     pub sel: Sel,
+    /// Controls selected along with `sel` (Ctrl+click, or a band dragged
+    /// over the dialog): its siblings, which move and are deleted with it.
+    also: Vec<Place>,
     pub path: Option<PathBuf>,
     /// Changed since it was last saved or loaded.
     pub dirty: bool,
@@ -250,6 +277,7 @@ impl Design {
         Self {
             spec,
             sel: Sel::Dialog,
+            also: Vec::new(),
             path,
             dirty: false,
             revision: 0,
@@ -438,10 +466,91 @@ impl Design {
     // ---- selecting ----------------------------------------------------------
 
     pub fn select(&mut self, sel: Sel) {
-        if self.sel != sel {
+        if self.sel != sel || !self.also.is_empty() {
+            self.also.clear();
             self.sel = sel;
             self.revision += 1;
         }
+    }
+
+    /// Everything selected: `sel` first, then the controls selected along
+    /// with it.
+    pub fn selection(&self) -> Vec<Sel> {
+        let mut all = vec![self.sel];
+        all.extend(self.also.iter().map(|&p| Sel::At(p)));
+        all
+    }
+
+    /// Whether `sel` is selected, alone or along with others.
+    pub fn is_selected(&self, sel: Sel) -> bool {
+        self.sel == sel || sel.path().is_some_and(|p| self.also.contains(&p))
+    }
+
+    /// Add `sel` to the selection, or take it out if it is in it (Ctrl+click).
+    /// Only siblings are selected together: a control elsewhere, or the
+    /// dialog, is selected alone.
+    pub fn toggle(&mut self, sel: Sel) {
+        let (Sel::At(path), Sel::At(first)) = (sel, self.sel) else {
+            self.select(sel);
+            return;
+        };
+        if path.container() != first.container() {
+            self.select(sel);
+            return;
+        }
+        if let Some(i) = self.also.iter().position(|&p| p == path) {
+            self.also.remove(i);
+        } else if path == first {
+            // The first goes; the next one selected takes its place.
+            if self.also.is_empty() {
+                return;
+            }
+            self.sel = Sel::At(self.also.remove(0));
+        } else {
+            self.also.push(path);
+        }
+        self.revision += 1;
+    }
+
+    /// The container whose empty inside `p` is on, given the control `hit`
+    /// there: the shown list of a group box or tab pane, the dialog's own
+    /// for the dialog. `None` on a control, or on a container's frame or
+    /// tab strip, which drag the container.
+    pub fn space_at(&self, hit: Sel, p: Point) -> Option<Container> {
+        let Sel::At(path) = hit else {
+            return Some(Container::Dialog);
+        };
+        let slot = shown_slot(self.at(path)?)?;
+        let inside = Container::In { owner: path, slot };
+        let (origin, (w, h)) = self.geometry(inside);
+        Rect::new(origin.x, origin.y, origin.x + w, origin.y + h)
+            .contains(p)
+            .then_some(inside)
+    }
+
+    /// Select the controls of `container` that lie wholly inside `band` (in
+    /// the frame's inside), in list order; the container itself (or the
+    /// dialog) when there are none.
+    pub fn select_within(&mut self, container: Container, band: Rect) {
+        let len = self.list(container).map_or(0, Vec::len);
+        let inside: Vec<Place> = (0..len)
+            .filter_map(|i| container.at(i))
+            .filter(|&p| {
+                let r = self.rect_of(Sel::At(p));
+                r.a.x >= band.a.x && r.a.y >= band.a.y && r.b.x <= band.b.x && r.b.y <= band.b.y
+            })
+            .collect();
+        if let Some((&first, rest)) = inside.split_first() {
+            self.sel = Sel::At(first);
+            self.also = rest.to_vec();
+        } else {
+            self.sel = match container {
+                Container::Dialog => Sel::Dialog,
+                Container::In { owner, .. } => Sel::At(owner),
+            };
+            self.also.clear();
+        }
+        self.revision += 1;
     }
 
     /// Select the next (or previous) thing in tab order, wrapping.
@@ -509,6 +618,7 @@ impl Design {
         };
         self.redo
             .push((std::mem::replace(&mut self.spec, spec), self.sel));
+        self.also.clear();
         self.sel = sel;
         self.changed();
         true
@@ -520,6 +630,7 @@ impl Design {
         };
         self.undo
             .push((std::mem::replace(&mut self.spec, spec), self.sel));
+        self.also.clear();
         self.sel = sel;
         self.changed();
         true
@@ -589,9 +700,125 @@ impl Design {
         let at = at.min(list.len());
         list.insert(at, control);
         let sel = Sel::At(into.at(at).expect("the container has room"));
+        self.also.clear();
         self.sel = sel;
         self.changed();
         sel
+    }
+
+    /// The selected controls as a control template called `name`: a dialog
+    /// just big enough to hold them, with them moved to its corner, in their
+    /// tab order. A label keeps its link only to a control of the group.
+    /// `None` when the dialog is selected.
+    pub fn selection_template(&self, name: &str) -> Option<DialogSpec> {
+        let mut paths: Vec<Place> = self.selection().iter().filter_map(|s| s.path()).collect();
+        if paths.len() != self.selection().len() {
+            return None;
+        }
+        paths.sort_by_key(Place::index);
+        let mut controls: Vec<Control> =
+            paths.iter().filter_map(|&p| self.at(p).cloned()).collect();
+        let left = controls.iter().map(|c| c.x).min()?;
+        let top = controls.iter().map(|c| c.y).min()?;
+        let right = controls.iter().map(|c| c.x + c.w).max()?;
+        let bottom = controls.iter().map(|c| c.y + c.h.max(1)).max()?;
+        for c in &mut controls {
+            c.x -= left;
+            c.y -= top;
+        }
+        let mut inside = Vec::new();
+        visit_all(&controls, &mut |c| inside.push(c.name.clone()));
+        for_each_mut(&mut controls, &mut |c| {
+            if let Kind::Label { link, .. } = &mut c.kind
+                && link.as_ref().is_some_and(|l| !inside.contains(l))
+            {
+                *link = None;
+            }
+        });
+        let mut spec = DialogSpec::new(name, right - left + 2, bottom - top + 2);
+        spec.controls = controls;
+        Some(spec)
+    }
+
+    /// Insert the controls of a control template, as one undo step: where a
+    /// control of that type would go (below the selection, or at the top
+    /// left), kept together inside the container, with names not in use and
+    /// the links among them kept. They come selected together, to be moved
+    /// into place. `false` when the template holds no controls.
+    pub fn insert_template(&mut self, template: &DialogSpec) -> bool {
+        let mut group = template.controls.clone();
+        if group.is_empty() {
+            return false;
+        }
+        let (into, at) = self.insert_point("");
+        let (cw, ch) = self.geometry(into).1;
+        let anchor = match self.sel {
+            Sel::At(p) if p.container() == into => {
+                self.selected().map(|a| (a.x, a.y + a.h.max(1) + 1))
+            }
+            _ => None,
+        };
+        let (x, y) = anchor.unwrap_or(match into {
+            Container::In { owner, .. }
+                if matches!(self.at(owner).map(|c| &c.kind), Some(Kind::GroupBox { .. })) =>
+            {
+                (1, 0)
+            }
+            _ => (2, 1),
+        });
+        // The whole group fits where it can, so it keeps its shape.
+        let width = group.iter().map(|c| c.x + c.w).max().unwrap_or(1);
+        let height = group.iter().map(|c| c.y + c.h.max(1)).max().unwrap_or(1);
+        let x = x.min(cw - width).max(0);
+        let y = y.min(ch - height).max(0);
+        self.rename_group(&mut group);
+        for c in &mut group {
+            c.x += x;
+            c.y += y;
+            fit(c, cw, ch);
+        }
+        self.snapshot();
+        let n = group.len();
+        let list = self.list_mut(into).expect("the container exists");
+        let at = at.min(list.len());
+        for (k, c) in group.into_iter().enumerate() {
+            list.insert(at + k, c);
+        }
+        let placed: Vec<Place> = (at..at + n).filter_map(|i| into.at(i)).collect();
+        self.sel = Sel::At(placed[0]);
+        self.also = placed[1..].to_vec();
+        self.changed();
+        true
+    }
+
+    /// Give the controls of `group`, and those inside them, names not in
+    /// use, keeping the label links among them and dropping the others.
+    fn rename_group(&self, group: &mut [Control]) {
+        let mut taken = self.names();
+        let mut renames: Vec<(String, String)> = Vec::new();
+        for_each_mut(group, &mut |c| {
+            if c.name.is_empty() {
+                return;
+            }
+            let stem = c.name.trim_end_matches(|ch: char| ch.is_ascii_digit());
+            let stem = if stem.is_empty() { "control" } else { stem };
+            let new = if taken.contains(&c.name) {
+                first_free(stem, |n| taken.iter().any(|t| t == n))
+            } else {
+                c.name.clone()
+            };
+            taken.push(new.clone());
+            renames.push((c.name.clone(), new.clone()));
+            c.name = new;
+        });
+        for_each_mut(group, &mut |c| {
+            if let Kind::Label { link, .. } = &mut c.kind {
+                *link = link
+                    .as_ref()
+                    .and_then(|l| renames.iter().find(|(old, _)| old == l))
+                    .map(|(_, new)| new.clone());
+            }
+        });
     }
 
     /// The list a new `type_name` control goes in, and where in it.
@@ -874,8 +1101,12 @@ impl Design {
     }
 
     /// Remove the selected control (with what is inside it), and any label
-    /// link to it. Selects what came before it.
+    /// link to it. Selects what came before it. With others selected, they
+    /// all go.
     pub fn delete(&mut self) -> bool {
+        if !self.also.is_empty() {
+            return self.delete_all();
+        }
         let sel = self.sel;
         let Some(removed) = self.control(sel).cloned() else {
             return false;
@@ -892,10 +1123,41 @@ impl Design {
             visit_all(list, &mut |c| gone.push(c.name.clone()));
         }
         unlink(&mut self.spec.controls, &gone);
+        self.also.clear();
         self.sel = if path.index() > 0 {
             Sel::At(path.with_index(path.index() - 1))
         } else {
             path.owner().map_or(Sel::Dialog, Sel::At)
+        };
+        self.changed();
+        true
+    }
+
+    fn delete_all(&mut self) -> bool {
+        let mut paths: Vec<Place> = self.selection().iter().filter_map(|s| s.path()).collect();
+        // From the end of the list, so the indices still to go stay put.
+        paths.sort_by_key(|p| std::cmp::Reverse(p.index()));
+        let Some(&first) = paths.last() else {
+            return false;
+        };
+        self.snapshot();
+        let mut gone = Vec::new();
+        for path in &paths {
+            let list = self
+                .siblings_mut(Sel::At(*path))
+                .expect("a control has siblings");
+            let removed = list.remove(path.index());
+            gone.push(removed.name.clone());
+            for list in removed.child_lists() {
+                visit_all(list, &mut |c| gone.push(c.name.clone()));
+            }
+        }
+        unlink(&mut self.spec.controls, &gone);
+        self.also.clear();
+        self.sel = if first.index() > 0 {
+            Sel::At(first.with_index(first.index() - 1))
+        } else {
+            first.owner().map_or(Sel::Dialog, Sel::At)
         };
         self.changed();
         true
@@ -918,6 +1180,7 @@ impl Design {
         let list = self.siblings_mut(sel).expect("a control has siblings");
         let index = path.index() + 1;
         list.insert(index, copy);
+        self.also.clear();
         self.sel = Sel::At(path.with_index(index));
         self.changed();
         true
@@ -972,12 +1235,173 @@ impl Design {
 
     /// Move the selected control by `(dx, dy)`, kept inside its container.
     /// The dialog does not move: it is placed when it runs.
+    /// With others selected, they all move together, as far as the one
+    /// nearest the edge can.
     pub fn move_by(&mut self, dx: i16, dy: i16) -> bool {
+        if !self.also.is_empty() {
+            return self.move_all_by(dx, dy);
+        }
         let Some(c) = self.selected() else {
             return false;
         };
         let place = (c.x + dx, c.y + dy, c.w, c.h);
         self.set_place(self.sel, place)
+    }
+
+    fn move_all_by(&mut self, mut dx: i16, mut dy: i16) -> bool {
+        let (cw, ch) = self.container_size(self.sel);
+        let all = self.selection();
+        for &sel in &all {
+            let Some(c) = self.control(sel) else {
+                return false;
+            };
+            dx = dx.clamp(-c.x, (cw - c.w - c.x).max(0));
+            dy = dy.clamp(-c.y, (ch - c.h.max(1) - c.y).max(0));
+        }
+        if (dx, dy) == (0, 0) {
+            return false;
+        }
+        self.snapshot();
+        for sel in all {
+            let c = self.control_mut(sel).expect("checked above");
+            c.x += dx;
+            c.y += dy;
+        }
+        self.changed();
+        true
+    }
+
+    /// Line the selected controls up on `how`: to the box around them, or
+    /// for one control alone, to its container (so Center centres it in the
+    /// dialog). One undo step; `false` when nothing moved.
+    pub fn align(&mut self, how: Arrange) -> bool {
+        let all = self.selection();
+        let Some(rects) = self.places_of(&all) else {
+            return false;
+        };
+        let (cw, ch) = self.container_size(self.sel);
+        let (left, top, right, bottom) = if rects.len() == 1 {
+            (0, 0, cw, ch)
+        } else {
+            rects.iter().fold(
+                (i16::MAX, i16::MAX, i16::MIN, i16::MIN),
+                |(l, t, r, b), &(x, y, w, h)| (l.min(x), t.min(y), r.max(x + w), b.max(y + h)),
+            )
+        };
+        let moved: Vec<(i16, i16)> = rects
+            .iter()
+            .map(|&(x, y, w, h)| match how {
+                Arrange::Left => (left, y),
+                Arrange::Right => (right - w, y),
+                Arrange::Center => (left + (right - left - w) / 2, y),
+                Arrange::Top => (x, top),
+                Arrange::Bottom => (x, bottom - h),
+                Arrange::Middle => (x, top + (bottom - top - h) / 2),
+            })
+            .collect();
+        self.place_all(&all, &moved, None)
+    }
+
+    /// Give the selected controls the width (`across`) or the height of the
+    /// first one selected. Needs two or more.
+    pub fn same_size(&mut self, across: bool) -> bool {
+        let all = self.selection();
+        let Some(rects) = self.places_of(&all) else {
+            return false;
+        };
+        if rects.len() < 2 {
+            return false;
+        }
+        let (_, _, w, h) = rects[0];
+        let at: Vec<(i16, i16)> = rects.iter().map(|&(x, y, _, _)| (x, y)).collect();
+        let sizes: Vec<(i16, i16)> = rects
+            .iter()
+            .map(|&(_, _, cw, ch)| if across { (w, ch) } else { (cw, h) })
+            .collect();
+        self.place_all(&all, &at, Some(&sizes))
+    }
+
+    /// Space the selected controls evenly, across or down. Three or more:
+    /// the first and the last stay, the others go so the gaps between them
+    /// are equal. One or two: they spread over the container, with equal
+    /// gaps between them and to its edges.
+    pub fn distribute(&mut self, across: bool) -> bool {
+        let all = self.selection();
+        let Some(rects) = self.places_of(&all) else {
+            return false;
+        };
+        let n = rects.len();
+        // Start and length along the axis, in order along it.
+        let span = |&(x, y, w, h): &(i16, i16, i16, i16)| if across { (x, w) } else { (y, h) };
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by_key(|&i| span(&rects[i]).0);
+        let lengths: i16 = order.iter().map(|&i| span(&rects[i]).1).sum();
+        let (cw, ch) = self.container_size(self.sel);
+        let (first, room, gaps) = if n >= 3 {
+            let (first, _) = span(&rects[order[0]]);
+            let (last, last_len) = span(&rects[order[n - 1]]);
+            let gaps = i16::try_from(n - 1).unwrap_or(i16::MAX);
+            (first, last + last_len - first - lengths, gaps)
+        } else {
+            // The edges count as gaps too; the cells left over go to the
+            // gaps nearest the start, so the first gap comes before the first.
+            let room = if across { cw } else { ch } - lengths;
+            let gaps = i16::try_from(n + 1).unwrap_or(i16::MAX);
+            let first = room / gaps + i16::from(room % gaps > 0);
+            let room = room - first;
+            (first, room, gaps - 1)
+        };
+        let mut moved: Vec<(i16, i16)> = rects.iter().map(|&(x, y, _, _)| (x, y)).collect();
+        let mut at = first;
+        for (k, &i) in order.iter().enumerate() {
+            let k = i16::try_from(k).unwrap_or(i16::MAX);
+            moved[i] = if across {
+                (at, rects[i].1)
+            } else {
+                (rects[i].0, at)
+            };
+            // The cells left over go to the first gaps, one each.
+            at += span(&rects[i]).1 + room / gaps + i16::from(k < room % gaps);
+        }
+        self.place_all(&all, &moved, None)
+    }
+
+    /// `(x, y, w, h)` of each of `all`, a control taking at least one row;
+    /// `None` when one of them is the dialog.
+    fn places_of(&self, all: &[Sel]) -> Option<Vec<(i16, i16, i16, i16)>> {
+        all.iter()
+            .map(|&sel| self.control(sel).map(|c| (c.x, c.y, c.w, c.h.max(1))))
+            .collect()
+    }
+
+    /// Put each of `all` at its corner in `at` (and size in `sizes`), kept
+    /// inside the container, as one undo step. `false` when nothing changed.
+    fn place_all(&mut self, all: &[Sel], at: &[(i16, i16)], sizes: Option<&[(i16, i16)]>) -> bool {
+        let (cw, ch) = self.container_size(self.sel);
+        let mut changed = Vec::new();
+        for (k, &sel) in all.iter().enumerate() {
+            let Some(current) = self.control(sel) else {
+                return false;
+            };
+            let mut placed = current.clone();
+            (placed.x, placed.y) = at[k];
+            if let Some(sizes) = sizes {
+                (placed.w, placed.h) = sizes[k];
+            }
+            fit(&mut placed, cw, ch);
+            if placed != *current {
+                changed.push((sel, placed));
+            }
+        }
+        if changed.is_empty() {
+            return false;
+        }
+        self.snapshot();
+        for (sel, placed) in changed {
+            *self.control_mut(sel).expect("checked above") = placed;
+        }
+        self.changed();
+        true
     }
 
     /// Grow or shrink the selection by `(dw, dh)`: a control within its
@@ -1038,6 +1462,7 @@ impl Design {
         };
         self.snapshot();
         self.siblings_mut(sel).expect("checked").swap(index, to);
+        self.also.clear();
         self.sel = Sel::At(path.with_index(to));
         self.changed();
         true
@@ -1089,6 +1514,7 @@ impl Design {
             .map(|&i| old[i].take().expect("a permutation"))
             .collect();
         let at = order.iter().position(|&i| i == path.index()).unwrap_or(0);
+        self.also.clear();
         self.sel = Sel::At(path.with_index(at));
         self.changed();
         true
@@ -1112,6 +1538,7 @@ impl Design {
             && tabs.contains(&sel)
             && sel != tabs
         {
+            self.also.clear();
             self.sel = Sel::At(tabs);
         }
         self.changed();
@@ -1243,6 +1670,7 @@ impl Design {
         list.push(control);
         let index = list.len() - 1;
         let sel = Sel::At(to.at(index).expect("the target has room"));
+        self.also.clear();
         self.sel = sel;
         self.reveal(sel);
         self.changed();

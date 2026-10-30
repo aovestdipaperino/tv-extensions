@@ -4,7 +4,9 @@
 //! and the screen checked.
 
 use super::*;
-use turbo_vision::core::event::{KB_DOWN, KB_ENTER, KB_LEFT, KB_RIGHT, KB_UP, MB_LEFT_BUTTON};
+use turbo_vision::core::event::{
+    KB_DEL, KB_DOWN, KB_ENTER, KB_HOME, KB_LEFT, KB_RIGHT, KB_UP, MB_LEFT_BUTTON,
+};
 use turbo_vision::core::palette::Attr;
 use turbo_vision::test_util::test_terminal;
 use turbo_vision::views::button::set_press_animation;
@@ -714,4 +716,533 @@ fn the_tutorial_goes_forward_and_back() {
     // Next, Next, Back, then Close.
     queue(&mut app, &[KB_ALT_N, KB_ALT_N, KB_ALT_B, KB_ESC]);
     command(&mut app, &mut designer, CM_TUTORIAL);
+}
+
+/// A design of three inputs, 10 wide: two on the left, one apart.
+fn three_inputs() -> Design {
+    let mut design = Design::default();
+    for place in [(5, 2, 10, 1), (5, 5, 10, 1), (30, 8, 10, 1)] {
+        let sel = design.insert("input");
+        design.set_place(sel, place);
+    }
+    design.select(Sel::Dialog);
+    design
+}
+
+fn places(designer: &Designer) -> Vec<(i16, i16)> {
+    let design = designer.design.borrow();
+    design.spec.controls.iter().map(|c| (c.x, c.y)).collect()
+}
+
+fn ctrl_click(app: &mut Application, designer: &mut Designer, at: Point) {
+    use turbo_vision::core::keys::KeyModifiers;
+    let mut press = Event::mouse(EventType::MouseDown, at, MB_LEFT_BUTTON, false);
+    press.key_modifiers = KeyModifiers::CONTROL;
+    step(app, designer, press);
+    mouse(app, designer, EventType::MouseUp, at);
+}
+
+#[test]
+fn a_line_drawn_as_a_box_is_marked_by_its_edge() {
+    use turbo_vision::core::palette::TvColor;
+    let mut design = Design::default();
+    let sel = design.insert("line");
+    design.set_place(sel, (2, 1, 10, 4));
+    design.select(sel);
+    let mut app = app();
+    let mut designer = open_designer(&mut app, design);
+    designer.refresh(&mut app);
+    app.draw();
+    let bg = |app: &Application, at: Point| {
+        app.terminal
+            .read_cell(at.x, at.y)
+            .map(|c| c.attr.bg)
+            .unwrap()
+    };
+    let edge = on_surface(&app, &designer, Point::new(2, 2));
+    let inside = on_surface(&app, &designer, Point::new(5, 2));
+    assert_eq!(bg(&app, edge), TvColor::LightCyan);
+    assert_ne!(bg(&app, inside), TvColor::LightCyan);
+}
+
+#[test]
+fn ctrl_click_selects_several_and_a_drag_moves_them_together() {
+    let mut app = app();
+    let mut designer = open_designer(&mut app, three_inputs());
+    let first = on_surface(&app, &designer, Point::new(6, 2));
+    let second = on_surface(&app, &designer, Point::new(6, 5));
+    mouse(&mut app, &mut designer, EventType::MouseDown, first);
+    mouse(&mut app, &mut designer, EventType::MouseUp, first);
+    ctrl_click(&mut app, &mut designer, second);
+    assert_eq!(designer.design.borrow().selection().len(), 2);
+
+    // Drag the second: both go 3 right and 1 down, the third stays.
+    let to = on_surface(&app, &designer, Point::new(9, 6));
+    mouse(&mut app, &mut designer, EventType::MouseDown, second);
+    mouse(&mut app, &mut designer, EventType::MouseMove, to);
+    mouse(&mut app, &mut designer, EventType::MouseUp, to);
+    assert_eq!(places(&designer), [(8, 3), (8, 6), (30, 8)]);
+    assert_eq!(designer.design.borrow().selection().len(), 2);
+    // One drag, one undo step.
+    command(&mut app, &mut designer, CM_UNDO);
+    assert_eq!(places(&designer), [(5, 2), (5, 5), (30, 8)]);
+}
+
+#[test]
+fn ctrl_click_on_a_selected_control_takes_it_out() {
+    let mut app = app();
+    let mut designer = open_designer(&mut app, three_inputs());
+    let first = on_surface(&app, &designer, Point::new(6, 2));
+    let second = on_surface(&app, &designer, Point::new(6, 5));
+    mouse(&mut app, &mut designer, EventType::MouseDown, first);
+    mouse(&mut app, &mut designer, EventType::MouseUp, first);
+    ctrl_click(&mut app, &mut designer, second);
+    ctrl_click(&mut app, &mut designer, first);
+    let design = designer.design.borrow();
+    assert_eq!(design.selection(), [Sel::top(1)]);
+}
+
+#[test]
+fn a_plain_click_on_one_of_several_selects_it_alone() {
+    let mut app = app();
+    let mut designer = open_designer(&mut app, three_inputs());
+    let first = on_surface(&app, &designer, Point::new(6, 2));
+    let second = on_surface(&app, &designer, Point::new(6, 5));
+    mouse(&mut app, &mut designer, EventType::MouseDown, first);
+    mouse(&mut app, &mut designer, EventType::MouseUp, first);
+    ctrl_click(&mut app, &mut designer, second);
+    mouse(&mut app, &mut designer, EventType::MouseDown, second);
+    mouse(&mut app, &mut designer, EventType::MouseUp, second);
+    assert_eq!(designer.design.borrow().selection(), [Sel::top(1)]);
+}
+
+#[test]
+fn a_band_selects_what_it_covers_and_del_deletes_them() {
+    use turbo_vision::core::event::KB_DEL;
+    let mut app = app();
+    let mut designer = open_designer(&mut app, three_inputs());
+    // From empty space above the first input to below the second.
+    let from = on_surface(&app, &designer, Point::new(3, 1));
+    let to = on_surface(&app, &designer, Point::new(20, 6));
+    mouse(&mut app, &mut designer, EventType::MouseDown, from);
+    mouse(&mut app, &mut designer, EventType::MouseMove, to);
+    mouse(&mut app, &mut designer, EventType::MouseUp, to);
+    assert_eq!(
+        designer.design.borrow().selection(),
+        [Sel::top(0), Sel::top(1)]
+    );
+    key(&mut app, &mut designer, KB_RIGHT);
+    assert_eq!(places(&designer), [(6, 2), (6, 5), (30, 8)]);
+
+    key(&mut app, &mut designer, KB_DEL);
+    assert_eq!(places(&designer), [(30, 8)]);
+    command(&mut app, &mut designer, CM_UNDO);
+    assert_eq!(places(&designer).len(), 3);
+}
+
+#[test]
+fn a_band_over_nothing_selects_the_dialog() {
+    let mut app = app();
+    let mut designer = open_designer(&mut app, three_inputs());
+    designer.design.borrow_mut().select(Sel::top(0));
+    let from = on_surface(&app, &designer, Point::new(20, 1));
+    let to = on_surface(&app, &designer, Point::new(25, 3));
+    mouse(&mut app, &mut designer, EventType::MouseDown, from);
+    mouse(&mut app, &mut designer, EventType::MouseMove, to);
+    mouse(&mut app, &mut designer, EventType::MouseUp, to);
+    assert_eq!(designer.design.borrow().selection(), [Sel::Dialog]);
+}
+
+#[test]
+fn controls_moved_together_stop_at_the_edge_together() {
+    let mut design = three_inputs();
+    design.select(Sel::top(0));
+    design.toggle(Sel::top(1));
+    // The first is 5 from the left edge: a move of 8 goes only 5.
+    assert!(design.move_by(-8, 0));
+    let xs: Vec<i16> = design.spec.controls.iter().map(|c| c.x).collect();
+    assert_eq!(xs, [0, 0, 30]);
+    assert!(!design.move_by(-1, 0));
+}
+
+/// [`three_inputs`] with all three selected.
+fn all_three() -> Design {
+    let mut design = three_inputs();
+    design.select(Sel::top(0));
+    design.toggle(Sel::top(1));
+    design.toggle(Sel::top(2));
+    design
+}
+
+fn xs(design: &Design) -> Vec<i16> {
+    design.spec.controls.iter().map(|c| c.x).collect()
+}
+
+fn ys(design: &Design) -> Vec<i16> {
+    design.spec.controls.iter().map(|c| c.y).collect()
+}
+
+#[test]
+fn align_lines_the_selection_up_on_the_box_around_it() {
+    // The box runs from 5 to 40 across and from 2 to 9 down.
+    let mut design = all_three();
+    assert!(design.align(Arrange::Right));
+    assert_eq!(xs(&design), [30, 30, 30]);
+    assert!(
+        !design.align(Arrange::Left),
+        "the box is where they are now"
+    );
+
+    let mut design = all_three();
+    assert!(design.align(Arrange::Left));
+    assert_eq!(xs(&design), [5, 5, 5]);
+    let mut design = all_three();
+    assert!(design.align(Arrange::Center));
+    assert_eq!(xs(&design), [17, 17, 17]);
+    let mut design = all_three();
+    assert!(design.align(Arrange::Top));
+    assert_eq!(ys(&design), [2, 2, 2]);
+    let mut design = all_three();
+    assert!(design.align(Arrange::Bottom));
+    assert_eq!(ys(&design), [8, 8, 8]);
+    let mut design = all_three();
+    assert!(design.align(Arrange::Middle));
+    assert_eq!(ys(&design), [5, 5, 5]);
+}
+
+#[test]
+fn one_control_alone_aligns_to_its_container() {
+    // The default dialog is 50 x 14: 48 x 12 inside its frame.
+    let mut design = three_inputs();
+    design.select(Sel::top(0));
+    assert!(design.align(Arrange::Center));
+    assert!(design.align(Arrange::Middle));
+    let c = &design.spec.controls[0];
+    assert_eq!((c.x, c.y), (19, 5));
+    assert!(design.align(Arrange::Right));
+    assert!(design.align(Arrange::Bottom));
+    let c = &design.spec.controls[0];
+    assert_eq!((c.x, c.y), (38, 11));
+    assert!(!design.align(Arrange::Right), "already there");
+}
+
+#[test]
+fn same_width_and_height_follow_the_first_selected() {
+    let mut design = three_inputs();
+    design.set_place(Sel::top(1), (5, 5, 16, 2));
+    design.select(Sel::top(1));
+    design.toggle(Sel::top(0));
+    design.toggle(Sel::top(2));
+    assert!(design.same_size(true));
+    let sizes: Vec<(i16, i16)> = design.spec.controls.iter().map(|c| (c.w, c.h)).collect();
+    assert_eq!(sizes, [(16, 1), (16, 2), (16, 1)]);
+    assert!(design.same_size(false));
+    let heights: Vec<i16> = design.spec.controls.iter().map(|c| c.h).collect();
+    assert_eq!(heights, [2, 2, 2]);
+}
+
+#[test]
+fn distribute_makes_the_gaps_equal_and_keeps_the_outermost() {
+    let mut design = three_inputs();
+    design.set_place(Sel::top(1), (12, 3, 10, 1));
+    let mut design = {
+        design.select(Sel::top(0));
+        design.toggle(Sel::top(1));
+        design.toggle(Sel::top(2));
+        design
+    };
+    // Down: rows 2, 3 and 8; 6 rows between them, 3 a gap.
+    assert!(design.distribute(false));
+    assert_eq!(ys(&design), [2, 5, 8]);
+    // Across: 5 to 40 holds 30 columns of input and 5 of gap: 3 then 2.
+    assert!(design.distribute(true));
+    assert_eq!(xs(&design), [5, 18, 30]);
+    assert!(!design.distribute(true), "already even");
+}
+
+#[test]
+fn same_size_needs_two_and_the_dialog_is_not_arranged() {
+    let mut design = three_inputs();
+    design.set_place(Sel::top(1), (5, 5, 16, 1));
+    design.select(Sel::top(0));
+    assert!(!design.same_size(true));
+    design.toggle(Sel::top(1));
+    assert!(design.same_size(true));
+    design.select(Sel::Dialog);
+    assert!(!design.distribute(true));
+    assert!(!design.align(Arrange::Left));
+}
+
+#[test]
+fn the_arrange_menu_aligns_and_undoes_in_one_step() {
+    let mut app = app();
+    let mut designer = open_designer(&mut app, all_three());
+    command(&mut app, &mut designer, CM_ALIGN + 1); // right edges
+    assert_eq!(xs(&designer.design.borrow()), [30, 30, 30]);
+    command(&mut app, &mut designer, CM_UNDO);
+    assert_eq!(xs(&designer.design.borrow()), [5, 5, 30]);
+}
+
+/// A group box and a tab pane, each holding two inputs, 10 wide.
+fn containers_design() -> Design {
+    let spec = DialogSpec::from_json(
+        r#"{ "title": "C", "width": 70, "height": 18, "controls": [
+            { "type": "group_box", "x": 1, "y": 1, "w": 30, "h": 10, "title": "Box", "controls": [
+                { "type": "input", "name": "a", "x": 2, "y": 1, "w": 10, "h": 1 },
+                { "type": "input", "name": "b", "x": 2, "y": 4, "w": 10, "h": 1 }
+            ] },
+            { "type": "tabs", "x": 33, "y": 1, "w": 34, "h": 12, "pages": [
+                { "title": "~O~ne", "controls": [
+                    { "type": "input", "name": "c", "x": 2, "y": 1, "w": 10, "h": 1 },
+                    { "type": "input", "name": "d", "x": 2, "y": 4, "w": 10, "h": 1 }
+                ] }
+            ] }
+        ] }"#,
+    )
+    .unwrap();
+    Design::new(spec, None)
+}
+
+/// Where control `name` is, inside the dialog's frame.
+fn rect_named(designer: &Designer, name: &str) -> Rect {
+    let design = designer.design.borrow();
+    let sel = design
+        .order()
+        .into_iter()
+        .find(|&s| design.control(s).is_some_and(|c| c.name == name))
+        .unwrap();
+    design.rect_of(sel)
+}
+
+fn names_selected(designer: &Designer) -> Vec<String> {
+    let design = designer.design.borrow();
+    design
+        .selection()
+        .into_iter()
+        .filter_map(|s| design.control(s).map(|c| c.name.clone()))
+        .collect()
+}
+
+#[test]
+fn ctrl_click_selects_several_in_a_group_box_and_on_a_tab_page() {
+    for (one, two) in [("a", "b"), ("c", "d")] {
+        let mut app = app();
+        let mut designer = open_designer(&mut app, containers_design());
+        let first = rect_named(&designer, one).a;
+        let second = rect_named(&designer, two).a;
+        let first = on_surface(&app, &designer, Point::new(first.x + 1, first.y));
+        let second = on_surface(&app, &designer, Point::new(second.x + 1, second.y));
+        mouse(&mut app, &mut designer, EventType::MouseDown, first);
+        mouse(&mut app, &mut designer, EventType::MouseUp, first);
+        ctrl_click(&mut app, &mut designer, second);
+        assert_eq!(names_selected(&designer), [one, two]);
+    }
+}
+
+#[test]
+fn a_band_selects_several_in_a_group_box_and_on_a_tab_page() {
+    for (one, two) in [("a", "b"), ("c", "d")] {
+        let mut app = app();
+        let mut designer = open_designer(&mut app, containers_design());
+        let first = rect_named(&designer, one);
+        let second = rect_named(&designer, two);
+        // From the empty space left of and above the first, inside the
+        // container, to past the second.
+        let from = on_surface(&app, &designer, Point::new(first.a.x - 1, first.a.y - 1));
+        let to = on_surface(&app, &designer, Point::new(second.b.x + 1, second.b.y));
+        mouse(&mut app, &mut designer, EventType::MouseDown, from);
+        mouse(&mut app, &mut designer, EventType::MouseMove, to);
+        mouse(&mut app, &mut designer, EventType::MouseUp, to);
+        assert_eq!(names_selected(&designer), [one, two]);
+    }
+}
+
+#[test]
+fn one_or_two_controls_distribute_over_their_container() {
+    // Inside the default dialog's frame: 48 x 12.
+    let mut design = three_inputs();
+    design.select(Sel::top(0));
+    design.toggle(Sel::top(1));
+    // 28 columns to share out, a gap before, between and after: 10, 9, 9.
+    assert!(design.distribute(true));
+    assert_eq!(xs(&design)[..2], [10, 29]);
+    // Down: 10 rows, 4, 3, 3.
+    assert!(design.distribute(false));
+    assert_eq!(ys(&design)[..2], [4, 8]);
+    assert!(!design.distribute(false), "already even");
+
+    // One alone: centred.
+    design.select(Sel::top(2));
+    assert!(design.distribute(true));
+    assert_eq!(xs(&design)[2], 19);
+}
+
+#[test]
+fn save_as_asks_for_the_file_in_a_file_dialog() {
+    let tmp = tempfile::tempdir().unwrap();
+    let first = tmp.path().join("first.json");
+    let mut design = Design::default();
+    design.saved(first.clone());
+    let mut app = app();
+    let mut designer = open_designer(&mut app, design);
+    // The dialog starts in the folder of the file; type a name, no extension.
+    queue_key(&mut app, KB_HOME);
+    for _ in 0..10 {
+        queue_key(&mut app, KB_DEL);
+    }
+    queue_text(&mut app, "second");
+    queue_key(&mut app, KB_ENTER);
+    command(&mut app, &mut designer, CM_SAVE_AS);
+    let second = tmp.path().join("second.json");
+    assert!(
+        second.exists(),
+        "{:?}",
+        std::fs::read_dir(tmp.path()).unwrap().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        designer.design.borrow().path.as_deref(),
+        Some(second.as_path())
+    );
+}
+
+/// A label linked to its input, and a button, in the dialog; a label
+/// linked to something else.
+fn form_design() -> Design {
+    let spec = DialogSpec::from_json(
+        r#"{ "title": "F", "width": 50, "height": 16, "controls": [
+            { "type": "label", "x": 4, "y": 3, "w": 6, "h": 1, "text": "~N~ame", "link": "name" },
+            { "type": "input", "name": "name", "x": 11, "y": 3, "w": 20, "h": 1 },
+            { "type": "label", "x": 4, "y": 5, "w": 6, "h": 1, "text": "~A~ge", "link": "age" },
+            { "type": "input", "name": "age", "x": 11, "y": 5, "w": 6, "h": 1 }
+        ] }"#,
+    )
+    .unwrap();
+    Design::new(spec, None)
+}
+
+#[test]
+fn the_selection_becomes_a_template_at_its_corner() {
+    let mut design = form_design();
+    design.select(Sel::top(1));
+    design.toggle(Sel::top(0));
+    design.toggle(Sel::top(2)); // the age label, without its input
+    let t = design.selection_template("Pair").unwrap();
+    assert_eq!(t.title, "Pair");
+    // In tab order, moved to the corner; just big enough, with the frame.
+    let at: Vec<(i16, i16)> = t.controls.iter().map(|c| (c.x, c.y)).collect();
+    assert_eq!(at, [(0, 0), (7, 0), (0, 2)]);
+    assert_eq!((t.width, t.height), (29, 5));
+    let links: Vec<Option<String>> = t
+        .controls
+        .iter()
+        .map(|c| match &c.kind {
+            Kind::Label { link, .. } => link.clone(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(links, [Some("name".to_string()), None, None]);
+    t.check().unwrap();
+
+    design.select(Sel::Dialog);
+    assert!(design.selection_template("x").is_none());
+}
+
+#[test]
+fn a_template_is_inserted_below_the_selection_renamed_and_selected() {
+    let mut design = form_design();
+    let template = {
+        let mut d = form_design();
+        d.select(Sel::top(0));
+        d.toggle(Sel::top(1));
+        d.selection_template("Pair").unwrap()
+    };
+    design.select(Sel::top(3)); // the age input, at (11, 5)
+    assert!(design.insert_template(&template));
+    let c = &design.spec.controls;
+    assert_eq!(c.len(), 6);
+    // After the age input, below it, keeping their shape.
+    assert_eq!((c[4].x, c[4].y, c[5].x, c[5].y), (11, 7, 18, 7));
+    // A name not in use, and the label follows it.
+    assert_eq!(c[5].name, "name1");
+    assert!(matches!(&c[4].kind, Kind::Label { link: Some(l), .. } if l == "name1"));
+    assert_eq!(design.selection(), [Sel::top(4), Sel::top(5)]);
+    design.spec.check().unwrap();
+    // One undo step.
+    assert!(design.undo());
+    assert_eq!(design.spec.controls.len(), 4);
+}
+
+#[test]
+fn a_template_too_far_down_moves_up_to_fit_whole() {
+    let mut design = form_design();
+    let tall = control_templates::list(Path::new("/nonexistent"))
+        .into_iter()
+        .find(|t| t.name == "Address")
+        .unwrap()
+        .spec;
+    design.set_place(Sel::top(3), (11, 12, 6, 1));
+    design.select(Sel::top(3));
+    assert!(design.insert_template(&tall));
+    // 14 rows inside; the group box is 7 high, so it starts at 7.
+    let group = &design.spec.controls[4];
+    assert_eq!((group.y, group.h), (7, 7));
+}
+
+#[test]
+fn the_selection_is_saved_as_a_control_template() {
+    let mut app = app();
+    let mut designer = open_designer(&mut app, form_design());
+    designer.design.borrow_mut().select(Sel::top(0));
+    designer.design.borrow_mut().toggle(Sel::top(1));
+    let tmp = tempfile::tempdir().unwrap();
+    queue_text(&mut app, "Name field");
+    queue(&mut app, &[KB_ENTER, KB_ENTER]);
+    designer.save_controls(&mut app, tmp.path());
+    let mine: Vec<_> = control_templates::list(tmp.path())
+        .into_iter()
+        .filter(|t| !t.sample)
+        .collect();
+    assert_eq!(mine.len(), 1);
+    assert_eq!(mine[0].name, "Name_field");
+    assert_eq!(mine[0].spec.controls.len(), 2);
+}
+
+#[test]
+fn the_control_template_manager_inserts_the_one_picked() {
+    let mut app = app();
+    let mut designer = open_designer(&mut app, Design::default());
+    let tmp = tempfile::tempdir().unwrap();
+    // The first is OK / Cancel.
+    queue(&mut app, &[KB_ENTER]);
+    designer.insert_controls(&mut app, tmp.path());
+    let design = designer.design.borrow();
+    let texts: Vec<String> = design
+        .spec
+        .controls
+        .iter()
+        .filter_map(|c| match &c.kind {
+            Kind::Button { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, ["~O~K", "Cancel"]);
+    assert_eq!(design.selection().len(), 2);
+}
+
+#[test]
+fn the_manager_does_not_delete_a_sample_but_deletes_yours() {
+    use turbo_vision::core::event::{KB_ALT_D, KB_ESC};
+    let mut app = app();
+    let tmp = tempfile::tempdir().unwrap();
+    control_templates::save(tmp.path(), "zz mine", &DialogSpec::new("m", 20, 4)).unwrap();
+    // Delete on the first (a sample): told no. Then on the last (yours):
+    // asked, Yes; then close.
+    let mut keys = vec![KB_ALT_D, KB_ENTER];
+    keys.extend([KB_DOWN; 7]);
+    keys.extend([KB_ALT_D, KB_ENTER, KB_ESC]);
+    queue(&mut app, &keys);
+    assert!(manage_control_templates(&mut app, tmp.path()).is_none());
+    let left = control_templates::list(tmp.path());
+    assert!(left.iter().all(|t| t.sample), "{left:?}");
+    assert_eq!(left.len(), 7);
 }
