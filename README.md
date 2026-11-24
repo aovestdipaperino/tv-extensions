@@ -1,5 +1,7 @@
 # tv-extensions
 
+[![GitHub stars](https://img.shields.io/github/stars/aovestdipaperino/tv-extensions?logo=github&color=brightgreen)](https://github.com/aovestdipaperino/tv-extensions/stargazers)
+
 <p align="center">
   <a href="https://crates.io/crates/tv-extensions"><img src="https://img.shields.io/crates/v/tv-extensions?style=flat-square&labelColor=101010" alt="crates.io"></a>
   <a href="https://docs.rs/tv-extensions"><img src="https://img.shields.io/docsrs/tv-extensions?style=flat-square&labelColor=101010" alt="docs.rs"></a>
