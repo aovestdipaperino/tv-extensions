@@ -88,6 +88,7 @@
 //! assert!(!list.valid(CM_OK));
 //! ```
 
+use crate::i18n::tr;
 use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
@@ -146,9 +147,9 @@ const HEADER_NORMAL: u8 = 7;
 const HEADER_FOCUSED: u8 = 8;
 const HEADER_SHORTCUT: u8 = 9;
 
-/// The text in front of each filter field unless
+/// The message of the text in front of each filter field unless
 /// [`DualListBuilder::filter_label`] says otherwise.
-const DEFAULT_FILTER_LABEL: &str = "Filter:";
+const FILTER_LABEL_ID: &str = "tvx-dual-filter";
 
 /// Alt+A to Alt+Z, the keys a `~X~` hotkey in a title answers to.
 const ALT_LETTERS: [u16; 26] = [
@@ -324,7 +325,7 @@ impl<K: Clone + PartialEq + 'static> DualList<K> {
     /// fit beside the lists.
     #[must_use]
     pub fn new(bounds: Rect, items: Vec<(K, String)>, data: Rc<RefCell<Vec<K>>>) -> Self {
-        let layout = Layout::new(bounds.width(), bounds.height(), DEFAULT_FILTER_LABEL);
+        let layout = Layout::new(bounds.width(), bounds.height(), &tr!(FILTER_LABEL_ID));
         let mut group = Group::new(Rect::new(0, 0, bounds.width(), bounds.height()));
         for side in [Side::Available, Side::Chosen] {
             if side == Side::Chosen {
@@ -359,8 +360,8 @@ impl<K: Clone + PartialEq + 'static> DualList<K> {
             shown: [Vec::new(), Vec::new()],
             filters: [String::new(), String::new()],
             data,
-            titles: ["Available".to_string(), "Chosen".to_string()],
-            filter_label: DEFAULT_FILTER_LABEL.to_string(),
+            titles: [tr!("tvx-dual-available"), tr!("tvx-dual-chosen")],
+            filter_label: tr!(FILTER_LABEL_ID),
             keep_chosen_order: false,
             min_chosen: 0,
             max_chosen: None,
@@ -639,14 +640,24 @@ impl<K: Clone + PartialEq + 'static> DualList<K> {
     }
 
     fn error_message(&self, refusal: Refusal) -> String {
-        let (custom, word, n) = match refusal {
-            Refusal::TooFew => (&self.min_message, "least", self.min_chosen),
-            Refusal::TooMany => (&self.max_message, "most", self.max_chosen.unwrap_or(0)),
+        let (custom, one, many, count) = match refusal {
+            Refusal::TooFew => (
+                &self.min_message,
+                "tvx-dual-min-one",
+                "tvx-dual-min-many",
+                self.min_chosen,
+            ),
+            Refusal::TooMany => (
+                &self.max_message,
+                "tvx-dual-max-one",
+                "tvx-dual-max-many",
+                self.max_chosen.unwrap_or(0),
+            ),
         };
         match custom {
             Some(message) => message.clone(),
-            None if n == 1 => format!("Choose at {word} one item"),
-            None => format!("Choose at {word} {n} items"),
+            None if count == 1 => tr!(one),
+            None => tr!(many, count = count),
         }
     }
 
@@ -669,10 +680,19 @@ impl<K: Clone + PartialEq + 'static> DualList<K> {
         let shown = self.shown[side.index()].len();
         let total = self.side_items(side).len();
         let title = &self.titles[side.index()];
+        // The message cannot start with a space: Fluent trims it.
         if shown == total {
-            format!(" {title} ({total})")
+            format!(" {}", tr!("tvx-dual-header", title = title, total = total))
         } else {
-            format!(" {title} ({shown} of {total})")
+            format!(
+                " {}",
+                tr!(
+                    "tvx-dual-header-filtered",
+                    title = title,
+                    shown = shown,
+                    total = total
+                )
+            )
         }
     }
 
@@ -1244,7 +1264,7 @@ mod tests {
     fn the_arrow_buttons_move_items_on_a_click() {
         let (mut list, data) = make(vec![]);
         // 50 columns: lists 21 wide, buttons at x 22..28 from row 3
-        let layout = Layout::new(50, 12, DEFAULT_FILTER_LABEL);
+        let layout = Layout::new(50, 12, "Filter:");
         assert_eq!(layout.button(0), Rect::new(22, 3, 28, 5));
         focus(&mut list, AVAILABLE_LIST);
         click(&mut list, 24, 3, false); // >
@@ -1383,6 +1403,25 @@ mod tests {
         list.set_items(vec![(3, "Mango".into()), (7, "Kiwi".into())]);
         assert_eq!(*data.borrow(), vec![3]);
         assert_eq!(labels(&list, Side::Available), ["Kiwi"]);
+    }
+
+    #[test]
+    fn titles_headers_and_refusals_follow_the_locale() {
+        turbo_vision::i18n::set_locale("ca");
+        let (mut list, _) = make(vec![]);
+        assert_eq!(list.header_text(Side::Available), " Disponibles (5)");
+        assert_eq!(list.header_text(Side::Chosen), " Triats (0)");
+        list.set_min_chosen(1);
+        list.set_max_chosen(Some(2));
+        assert_eq!(
+            list.error_message(Refusal::TooFew),
+            "Trieu almenys un element"
+        );
+        assert_eq!(
+            list.error_message(Refusal::TooMany),
+            "Trieu com a màxim 2 elements"
+        );
+        turbo_vision::i18n::set_locale("en");
     }
 
     #[test]

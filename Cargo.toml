@@ -26,7 +26,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 # host-driven hooks this crate depends on. 4.0.1 is required: it is the
 # version where Desktop (and TabbedPane/SplitPane) forward update_cursor,
 # which HostInput::cursor()/Session::cursor() depend on.
-turbo-vision = { version = "4.1.0", default-features = false }
+turbo-vision = { version = "4.2.0", default-features = false }
 tracing = { version = "0.1", optional = true }
 base64 = { version = "0.22", optional = true }
 chrono = { version = "0.4.45", optional = true }
@@ -43,7 +43,7 @@ ssh-key = { version = "0.6", optional = true }
 unicode-width = { version = "0.1", optional = true }
 
 [dev-dependencies]
-turbo-vision = { version = "4.1.0", default-features = false, features = ["test-util"] }
+turbo-vision = { version = "4.2.0", default-features = false, features = ["test-util"] }
 tempfile = "3"
 # Used by the kitty_biorhythm example only; not part of the library's API.
 chrono = "0.4.45"
@@ -52,7 +52,10 @@ chrono = "0.4.45"
 flate2 = "1"
 
 [features]
-default = ["chrono"]
+default = ["chrono", "i18n"]
+# Translations with Project Fluent: forwarded to turbo-vision. Off, the
+# messages are still looked up, as plain text (no plurals or selectors).
+i18n = ["turbo-vision/i18n"]
 # Forms described as JSON and answered as JSON (`forms::json`), for an agent or
 # an MCP tool that needs a person to fill something in.
 json = ["dep:serde_json"]

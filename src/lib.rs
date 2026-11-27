@@ -17,6 +17,8 @@
 //!   reusing the framework's `MenuBox`.
 //! - [`autocomplete`]: [`AutoComplete`], a text field that filters a
 //!   suggestion list as you type.
+//! - [`i18n`]: translations of the texts this crate shows, through
+//!   turbo-vision's own mechanism, in English, Spanish and Catalan.
 //! - [`keys`]: key events from key names such as "ctrl-s" or "enter", the
 //!   form a host that is not a terminal reports keys in.
 //! - `dialog_spec` (feature `dialog`): dialogs laid out in the dialog
@@ -55,6 +57,7 @@ pub mod forms;
 #[cfg_attr(docsrs, doc(cfg(feature = "graphics")))]
 pub mod graphics;
 pub mod host;
+pub mod i18n;
 pub mod keys;
 #[cfg(feature = "log")]
 #[cfg_attr(docsrs, doc(cfg(feature = "log")))]

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-Requires turbo-vision 4.1.0.
+Requires turbo-vision 4.2.0, the first release with the `i18n` module.
 
 ### Changed
 
@@ -12,6 +12,23 @@ Requires turbo-vision 4.1.0.
   `KB_ESC`) types instead of closing the list.
 
 ### Added
+
+- Translations (issue #10), through turbo-vision's own mechanism so one
+  language setting and one catalogue serve the framework, this crate and
+  the application. The new `i18n` module registers this crate's messages
+  (ids start with `tvx-`) in English, Spanish and Catalan, and the texts it
+  shows now come from them: the CSV editor's menus, status line, dialogs
+  and messages, record-form and JSON-dialog error messages, the
+  `AutoComplete` and `DualList` defaults, and the log window's title. OK and
+  Cancel are turbo-vision's `button-ok` and `button-cancel`. English is the
+  default and the fallback, so an application that never chooses a locale
+  sees no change. `i18n::register()` adds the messages on demand (every
+  lookup does it too) and `i18n::built_in_source(locale)` returns the files
+  for a translator. New cargo feature `i18n` (on by default) forwards to
+  turbo-vision's; off, the messages are read as plain text. The CSV status
+  line keeps its F10 hint at 60 columns when a translation is longer than
+  English, by dropping its first hints. The Spanish and Catalan texts are a
+  first draft for a native speaker to review.
 
 - `forms`: `Editor::edit_synced`, `edit_with` with one more closure, called
   each time the focus leaves a field with the record as the fields describe

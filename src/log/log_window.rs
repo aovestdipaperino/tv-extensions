@@ -25,6 +25,7 @@
 //! tracing::debug!("Loading config from {:?}", path);
 //! ```
 
+use crate::i18n::tr;
 use std::fmt::Write;
 
 use super::terminal_widget::TerminalWidget;
@@ -270,7 +271,7 @@ impl LogWindowBuilder {
     #[must_use]
     pub fn build(self) -> LogWindow {
         let bounds = self.bounds.expect("LogWindow bounds must be set");
-        let title = self.title.unwrap_or_else(|| "Log".to_string());
+        let title = self.title.unwrap_or_else(|| tr!("tvx-log-title"));
 
         // Use blue window as base, then override palette to black-background entries
         // App palette positions 97-104 are the black window colors

@@ -3,6 +3,7 @@
 //! The editor's dialogs: plain, non-modal `Dialog`s on the desktop whose
 //! buttons send the `CMD_DLG_*` commands back to the editor's handler.
 
+use crate::i18n::tr;
 use turbo_vision::app::Application;
 use turbo_vision::core::geometry::Rect;
 use turbo_vision::views::View;
@@ -174,8 +175,8 @@ fn prompt(
         w,
         4,
         &[
-            ("~O~K", CMD_DLG_OK, true),
-            ("Cancel", CMD_DLG_CANCEL, false),
+            (&tr!("button-ok"), CMD_DLG_OK, true),
+            (&tr!("button-cancel"), CMD_DLG_CANCEL, false),
         ],
     );
     dialog.set_initial_focus();
@@ -185,8 +186,8 @@ fn prompt(
 pub(crate) fn edit_cell(app: &mut Application, text: &str, row: usize, col: usize) -> Overlay {
     let (dialog, input) = prompt(
         app,
-        "Edit cell",
-        &format!("Row {}, column {}:", row + 1, col + 1),
+        &tr!("tvx-csv-edit-cell-title"),
+        &tr!("tvx-csv-edit-cell-label", row = row + 1, column = col + 1),
         text,
     );
     Overlay::EditCell {
@@ -198,12 +199,22 @@ pub(crate) fn edit_cell(app: &mut Application, text: &str, row: usize, col: usiz
 }
 
 pub(crate) fn rename_col(app: &mut Application, name: &str, col: usize) -> Overlay {
-    let (dialog, input) = prompt(app, "Rename column", "Column name:", name);
+    let (dialog, input) = prompt(
+        app,
+        &tr!("tvx-csv-rename-title"),
+        &tr!("tvx-csv-rename-label"),
+        name,
+    );
     Overlay::RenameCol { dialog, input, col }
 }
 
 pub(crate) fn save_as(app: &mut Application, name: &str, then: After) -> Overlay {
-    let (dialog, input) = prompt(app, "Save as", "File name:", name);
+    let (dialog, input) = prompt(
+        app,
+        &tr!("tvx-csv-save-as-title"),
+        &tr!("tvx-csv-save-as-label"),
+        name,
+    );
     Overlay::SaveAs {
         dialog,
         input,
@@ -214,7 +225,7 @@ pub(crate) fn save_as(app: &mut Application, name: &str, then: After) -> Overlay
 pub(crate) fn open(app: &mut Application, names: Vec<String>) -> Overlay {
     let w: i16 = 44;
     let rows = i16::try_from(names.len()).unwrap_or(i16::MAX).clamp(3, 10);
-    let mut dialog = centred(app, w, rows + 6, "Open");
+    let mut dialog = centred(app, w, rows + 6, &tr!("tvx-csv-open-title"));
     let mut list = ListBox::new(Rect::new(1, 0, w - 3, rows), CMD_OPEN_PICK);
     list.set_items(names.clone());
     let list = dialog.add_typed(list);
@@ -223,8 +234,8 @@ pub(crate) fn open(app: &mut Application, names: Vec<String>) -> Overlay {
         w,
         rows + 1,
         &[
-            ("~O~pen", CMD_DLG_OK, true),
-            ("Cancel", CMD_DLG_CANCEL, false),
+            (&tr!("tvx-csv-open-button"), CMD_DLG_OK, true),
+            (&tr!("button-cancel"), CMD_DLG_CANCEL, false),
         ],
     );
     dialog.set_initial_focus();
@@ -237,19 +248,19 @@ pub(crate) fn open(app: &mut Application, names: Vec<String>) -> Overlay {
 
 pub(crate) fn unsaved(app: &mut Application, name: &str, then: After) -> Overlay {
     let w: i16 = 50;
-    let mut dialog = centred(app, w, 8, "Unsaved changes");
+    let mut dialog = centred(app, w, 8, &tr!("tvx-csv-unsaved-title"));
     dialog.add(StaticText::new(
         Rect::new(1, 1, w - 3, 2),
-        &format!("Save changes to {name}?"),
+        &tr!("tvx-csv-unsaved-text", name = name),
     ));
     buttons(
         &mut dialog,
         w,
         3,
         &[
-            ("~S~ave", CMD_DLG_OK, true),
-            ("~D~iscard", CMD_DISCARD, false),
-            ("Cancel", CMD_DLG_CANCEL, false),
+            (&tr!("tvx-csv-unsaved-save"), CMD_DLG_OK, true),
+            (&tr!("tvx-csv-unsaved-discard"), CMD_DISCARD, false),
+            (&tr!("button-cancel"), CMD_DLG_CANCEL, false),
         ],
     );
     dialog.set_initial_focus();
@@ -264,21 +275,18 @@ pub(crate) fn unsaved(app: &mut Application, name: &str, then: After) -> Overlay
 pub(crate) fn delete_row(app: &mut Application, row: usize) -> Overlay {
     // Wide enough for the question on one line, row numbers included.
     let w: i16 = 74;
-    let mut dialog = centred(app, w, 8, "Delete row");
+    let mut dialog = centred(app, w, 8, &tr!("tvx-csv-delete-row-title"));
     dialog.add(StaticText::new(
         Rect::new(1, 1, w - 3, 2),
-        &format!(
-            "Delete row {}? It is removed from the store when the grid closes.",
-            row + 1
-        ),
+        &tr!("tvx-csv-delete-row-text", row = row + 1),
     ));
     buttons(
         &mut dialog,
         w,
         3,
         &[
-            ("~D~elete", CMD_DLG_OK, false),
-            ("Cancel", CMD_DLG_CANCEL, true),
+            (&tr!("tvx-csv-delete"), CMD_DLG_OK, false),
+            (&tr!("button-cancel"), CMD_DLG_CANCEL, true),
         ],
     );
     // The buttons are the last two children: Cancel is the second. The

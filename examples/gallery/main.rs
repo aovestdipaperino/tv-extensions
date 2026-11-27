@@ -607,6 +607,10 @@ mod tests {
     /// Modules with no demo of their own, and why.
     const NOT_DEMOED: &[(&str, &str)] = &[
         (
+            "i18n",
+            "the crate's own texts in English, Spanish and Catalan; no view, the demos follow the locale",
+        ),
+        (
             "remote_input",
             "key chords typed over TCP, for automation; no view",
         ),

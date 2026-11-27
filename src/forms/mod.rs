@@ -551,8 +551,8 @@ impl<R> Form<R> {
     /// (`CM_CANCEL`). Either one closes the dialog, and `execute` returns
     /// its command.
     pub fn ok_cancel(&mut self) -> &mut Self {
-        self.default_button("~O~K", CM_OK);
-        self.button("Cancel", CM_CANCEL);
+        self.default_button(&crate::i18n::tr!("button-ok"), CM_OK);
+        self.button(&crate::i18n::tr!("button-cancel"), CM_CANCEL);
         self
     }
 

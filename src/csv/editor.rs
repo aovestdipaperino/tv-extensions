@@ -8,6 +8,7 @@
 //! blocking run loop, and every dialog is a plain desktop window whose
 //! buttons send commands back to the `State` handler.
 
+use crate::i18n::tr;
 use turbo_vision::app::{AppHandler, Application};
 use turbo_vision::core::command::{CM_CLOSE, CM_QUIT, CommandId};
 use turbo_vision::core::event::{
@@ -119,35 +120,35 @@ fn menu_bar(width: i16) -> MenuBar {
         }
     };
     let file = SubMenu::new(
-        "~F~ile",
+        &tr!("tvx-csv-menu-file"),
         Menu::from_items(vec![
-            item("~N~ew", CMD_NEW, None),
-            item("~O~pen...", CMD_OPEN, Some("Ctrl+O")),
-            item("~S~ave", CMD_SAVE, Some("Ctrl+S")),
-            item("Save ~a~s...", CMD_SAVE_AS, None),
+            item(&tr!("tvx-csv-file-new"), CMD_NEW, None),
+            item(&tr!("tvx-csv-file-open"), CMD_OPEN, Some("Ctrl+O")),
+            item(&tr!("tvx-csv-file-save"), CMD_SAVE, Some("Ctrl+S")),
+            item(&tr!("tvx-csv-file-save-as"), CMD_SAVE_AS, None),
             MenuItem::separator(),
-            item("E~x~it", CMD_EXIT, Some("Ctrl+Q")),
+            item(&tr!("tvx-csv-file-exit"), CMD_EXIT, Some("Ctrl+Q")),
         ]),
     );
     let edit = SubMenu::new(
-        "~E~dit",
+        &tr!("tvx-csv-menu-edit"),
         Menu::from_items(vec![
-            item("~E~dit cell", CMD_EDIT_CELL, Some("Enter")),
-            item("~R~ename column", CMD_RENAME_COL, None),
+            item(&tr!("tvx-csv-edit-cell"), CMD_EDIT_CELL, Some("Enter")),
+            item(&tr!("tvx-csv-edit-rename-column"), CMD_RENAME_COL, None),
         ]),
     );
     let row = SubMenu::new(
-        "~R~ow",
+        &tr!("tvx-csv-menu-row"),
         Menu::from_items(vec![
-            item("~I~nsert", CMD_ROW_INS, Some("Ctrl+R")),
-            item("~D~elete", CMD_ROW_DEL, Some("Ctrl+Y")),
+            item(&tr!("tvx-csv-insert"), CMD_ROW_INS, Some("Ctrl+R")),
+            item(&tr!("tvx-csv-delete"), CMD_ROW_DEL, Some("Ctrl+Y")),
         ]),
     );
     let col = SubMenu::new(
-        "~C~olumn",
+        &tr!("tvx-csv-menu-column"),
         Menu::from_items(vec![
-            item("~I~nsert", CMD_COL_INS, Some("Ctrl+L")),
-            item("~D~elete", CMD_COL_DEL, Some("Ctrl+K")),
+            item(&tr!("tvx-csv-insert"), CMD_COL_INS, Some("Ctrl+L")),
+            item(&tr!("tvx-csv-delete"), CMD_COL_DEL, Some("Ctrl+K")),
         ]),
     );
     let mut bar = MenuBar::new(Rect::new(0, 0, width, 1));
@@ -163,18 +164,39 @@ fn status_line(width: i16, height: i16) -> StatusLine {
     // item takes its text plus four columns, so all five would need 70; at
     // the 60-column minimum Enter (the obvious key) gives way to F10, the one
     // way into the menus. F10 Menu has no command: the menu bar owns F10.
+    //
+    // A translation can be longer than English. The status line drops the
+    // items that do not fit from the end, which would lose F10 first, so the
+    // hints are listed least important first and the ones that leave no room
+    // for F10 are dropped from the front.
+    let mut hints: Vec<(String, CommandId)> = vec![
+        (
+            format!("~Ctrl-R~ {}", tr!("tvx-csv-status-row")),
+            CMD_ROW_INS,
+        ),
+        (format!("~Ctrl-S~ {}", tr!("tvx-csv-status-save")), CMD_SAVE),
+        (format!("~Ctrl-Q~ {}", tr!("tvx-csv-status-exit")), CMD_EXIT),
+    ];
+    let menu = format!("~F10~ {}", tr!("tvx-csv-status-menu"));
+    let columns = |text: &str| text.chars().filter(|&c| c != '~').count() + 4;
+    // The status line draws an item when its start plus its text (tildes
+    // included) plus four is less than the width.
+    let room_for_menu = |hints: &[(String, CommandId)]| {
+        let start: usize = hints.iter().map(|(text, _)| columns(text)).sum();
+        start + menu.chars().count() + 4 < usize::try_from(width).unwrap_or(0)
+    };
+    while !hints.is_empty() && !room_for_menu(&hints) {
+        hints.remove(0);
+    }
     let item = |text: &str, command: CommandId| {
         StatusItemBuilder::new().text(text).command(command).build()
     };
-    StatusLine::new(
-        Rect::new(0, height - 1, width, height),
-        vec![
-            item("~Ctrl-R~ Row", CMD_ROW_INS),
-            item("~Ctrl-S~ Save", CMD_SAVE),
-            item("~Ctrl-Q~ Exit", CMD_EXIT),
-            item("~F10~ Menu", 0),
-        ],
-    )
+    let mut items: Vec<_> = hints
+        .iter()
+        .map(|(text, command)| item(text, *command))
+        .collect();
+    items.push(item(&menu, 0));
+    StatusLine::new(Rect::new(0, height - 1, width, height), items)
 }
 
 /// The sentinel `command_run` sends for a bare `/csvedit:open` (no name): the
@@ -190,9 +212,8 @@ fn load(arg: &str, disk: &dyn Disk) -> (CsvDoc, Option<String>, String) {
     match disk.read(arg) {
         Ok(text) => {
             let (doc, error) = CsvDoc::from_text(&text);
-            let message = error.map_or_else(String::new, |line| {
-                format!("parse error at line {line}; saving will drop the rest")
-            });
+            let message =
+                error.map_or_else(String::new, |line| tr!("tvx-csv-parse-error", line = line));
             (doc, Some(arg.to_string()), message)
         }
         Err(e) => (CsvDoc::new_blank(3, 3), Some(arg.to_string()), e),
@@ -465,7 +486,7 @@ impl State {
                 self.doc.mark_saved();
                 self.name = Some(name.to_string());
                 self.last_saved = Some(name.to_string());
-                self.set_message(app, &format!("saved {name}"));
+                self.set_message(app, &tr!("tvx-csv-saved", name = name));
                 self.refresh(app);
                 true
             }
@@ -504,7 +525,7 @@ impl State {
 
     fn open_picker(&mut self, app: &mut Application) {
         match self.disk.list() {
-            Ok(names) if names.is_empty() => self.set_message(app, "no saved files yet"),
+            Ok(names) if names.is_empty() => self.set_message(app, &tr!("tvx-csv-no-files")),
             Ok(names) => {
                 let o = dialogs::open(app, names);
                 self.open_overlay(o);
@@ -541,13 +562,13 @@ impl State {
             Overlay::SaveAs { then, .. } => {
                 let name = value.trim().to_string();
                 if name.is_empty() {
-                    self.set_message(app, "a file name is needed");
+                    self.set_message(app, &tr!("tvx-csv-name-needed"));
                     return;
                 }
                 // The Open dialog lists only the disk's root, so a file saved
                 // in a subfolder could never be opened again.
                 if name.contains('/') {
-                    self.set_message(app, "names cannot contain '/'");
+                    self.set_message(app, &tr!("tvx-csv-name-slash"));
                     return;
                 }
                 let name = if name.to_ascii_lowercase().ends_with(".csv") {
@@ -601,7 +622,7 @@ impl State {
     fn edit_cell(&mut self, app: &mut Application) {
         let (row, col) = self.selection(app);
         if self.bridged && col == 0 {
-            self.set_message(app, "the # column is fixed");
+            self.set_message(app, &tr!("tvx-csv-column-fixed"));
             return;
         }
         let o = dialogs::edit_cell(app, self.doc.cell(row, col), row, col);
@@ -610,7 +631,7 @@ impl State {
 
     fn rename_col(&mut self, app: &mut Application) {
         if self.bridged {
-            self.set_message(app, "this grid's columns are fixed");
+            self.set_message(app, &tr!("tvx-csv-columns-fixed"));
             return;
         }
         let (_, col) = self.selection(app);
@@ -622,7 +643,7 @@ impl State {
     /// A row or column command at the selection.
     fn reshape(&mut self, app: &mut Application, command: CommandId) {
         if self.bridged && matches!(command, CMD_COL_INS | CMD_COL_DEL) {
-            self.set_message(app, "this grid's columns are fixed");
+            self.set_message(app, &tr!("tvx-csv-columns-fixed"));
             return;
         }
         let (row, col) = self.selection(app);
@@ -646,7 +667,7 @@ impl State {
 
     /// The message for a bridged doc's refused New/Open/Save As.
     fn stays_message(&self) -> String {
-        format!("this grid stays on {}", self.display_name())
+        tr!("tvx-csv-grid-stays", name = self.display_name())
     }
 }
 
@@ -1185,6 +1206,64 @@ mod tests {
         for hint in ["Ctrl-R Row", "Ctrl-S Save", "Ctrl-Q Exit", "F10 Menu"] {
             assert!(bottom.contains(hint), "{hint}: {bottom}");
         }
+    }
+
+    /// A session built after the locale is chosen, as an application does.
+    fn session_in(locale: &str, width: u16, height: u16) -> Session {
+        turbo_vision::i18n::set_locale(locale);
+        let mut s = Session::open(width, height, "", Box::new(MemDisk::default()));
+        s.step(width, height);
+        s
+    }
+
+    #[test]
+    fn the_menu_bar_and_status_line_follow_the_locale() {
+        for (locale, menu, hints) in [
+            (
+                "es",
+                "Archivo",
+                &["Ctrl-S Guardar", "Ctrl-Q Salir", "F10 Menú"][..],
+            ),
+            (
+                "ca",
+                "Fitxer",
+                &["Ctrl-R Fila", "Ctrl-S Desa", "Ctrl-Q Surt", "F10 Menú"][..],
+            ),
+        ] {
+            // The minimum width: every hint must still fit in translation.
+            let s = session_in(locale, 60, 16);
+            let buf = s.buffer();
+            let top: String = buf[0].iter().map(|c| c.ch).collect();
+            let bottom: String = buf[15].iter().map(|c| c.ch).collect();
+            assert!(top.contains(menu), "{locale}: {top}");
+            for hint in hints {
+                assert!(bottom.contains(hint), "{locale} {hint}: {bottom}");
+            }
+        }
+        turbo_vision::i18n::set_locale("en");
+    }
+
+    #[test]
+    fn dialogs_and_messages_follow_the_locale() {
+        let mut s = session_in("es", 80, 24);
+        press(&mut s, "enter");
+        s.step(80, 24);
+        let shown = screen(&s);
+        assert!(shown.contains("Editar celda"), "{shown}");
+        assert!(shown.contains("Fila 1, columna 1:"), "{shown}");
+        assert!(shown.contains("Aceptar"), "{shown}");
+        assert!(shown.contains("Cancelar"), "{shown}");
+        press(&mut s, "escape");
+
+        let mut s = session_in("ca", 80, 24);
+        press(&mut s, "ctrl-o");
+        s.step(80, 24);
+        assert!(
+            screen(&s).contains("encara no hi ha fitxers desats"),
+            "{}",
+            screen(&s)
+        );
+        turbo_vision::i18n::set_locale("en");
     }
 
     /// A disk holding a bridged grid: its header's first cell is `#`.
