@@ -4,12 +4,13 @@
 //! JSON, validation shown in the dialog, and actions bound in code.
 
 use super::line::LineView;
-use super::tint::Tint;
 use super::spec::{Align, Color, Control, DialogSpec, Kind, SpecError, TreeNode, ValidatorSpec};
+use super::tint::Tint;
 use crate::autocomplete::AutoCompleteBuilder;
 use crate::dual_list::{DualList, DualListBuilder};
 use crate::forms::data::{ErrorLine, next_combo_id};
 use crate::forms::{find_view_mut, focus_view, focused_view};
+use crate::i18n::tr;
 use crate::{AutoComplete, dual_list};
 use serde_json::{Map, Value};
 use std::cell::RefCell;
@@ -34,13 +35,13 @@ use turbo_vision::views::group_box::GroupBox;
 use turbo_vision::views::history::History;
 use turbo_vision::views::input_line::InputLine;
 use turbo_vision::views::label::Label;
+use turbo_vision::views::list_viewer::ListViewer;
 use turbo_vision::views::listbox::ListBox;
 use turbo_vision::views::lookup_validator::LookupValidator;
-use turbo_vision::views::list_viewer::ListViewer;
 use turbo_vision::views::memo::Memo;
 use turbo_vision::views::msgbox::message_box_ok;
-use turbo_vision::views::picture_validator::PictureValidator;
 use turbo_vision::views::outline::{Node, OutlineViewer};
+use turbo_vision::views::picture_validator::PictureValidator;
 use turbo_vision::views::progress_bar::ProgressBar;
 use turbo_vision::views::slider::Slider;
 use turbo_vision::views::spinner::Spinner;
@@ -515,7 +516,8 @@ impl JsonDialog {
                     continue;
                 }
                 seen[w] = now;
-                let before: Vec<Value> = watched.iter().map(|&i| read(dialog, &fields[i])).collect();
+                let before: Vec<Value> =
+                    watched.iter().map(|&i| read(dialog, &fields[i])).collect();
                 let flow = handler(&mut ActionContext {
                     app,
                     action: name,
@@ -786,8 +788,9 @@ fn read(dialog: &mut Dialog, field: &Field) -> Value {
         Kind::DualList { .. } => {
             view::<DualList<String>>(dialog, id).map(|v| Value::from(v.chosen_keys()))
         }
-        Kind::Tree { .. } => view::<Tree>(dialog, id)
-            .map(|v| tree_selected(v).map_or(Value::Null, Value::from)),
+        Kind::Tree { .. } => {
+            view::<Tree>(dialog, id).map(|v| tree_selected(v).map_or(Value::Null, Value::from))
+        }
         _ => None,
     };
     value.unwrap_or(Value::Null)
@@ -1022,18 +1025,26 @@ fn built_in_error(dialog: &mut Dialog, field: &Field, value: &Value) -> Option<S
     match &field.kind {
         Kind::Input { required, .. } => {
             if *required && blank {
-                return Some(format!("{title} is required"));
+                return Some(tr!("tvx-form-required", name = title));
             }
             let valid = view::<InputLine>(dialog, field.id).is_none_or(|v| blank || v.is_valid());
-            (!valid).then(|| format!("{title} is not valid"))
+            (!valid).then(|| {
+                tr!(
+                    "tvx-form-problem",
+                    name = title,
+                    problem = tr!("tvx-form-not-valid")
+                )
+            })
         }
-        Kind::Memo { required: true, .. } if blank => Some(format!("{title} is required")),
+        Kind::Memo { required: true, .. } if blank => Some(tr!("tvx-form-required", name = title)),
         Kind::CheckBox { required: true, .. } if value != &Value::Bool(true) => {
-            Some(format!("{title} must be checked"))
+            Some(tr!("tvx-form-must-be-checked", name = title))
         }
-        Kind::ComboBox { required: true, .. } if value.is_null() => {
-            Some(format!("{title} must be chosen"))
-        }
+        Kind::ComboBox { required: true, .. } if value.is_null() => Some(tr!(
+            "tvx-form-problem",
+            name = title,
+            problem = tr!("tvx-form-must-be-chosen")
+        )),
         _ => None,
     }
 }
@@ -1064,7 +1075,11 @@ fn display(dialog: &mut Dialog, fields: &[Field], error_line: Option<ViewId>, er
     let shown = focused.or_else(|| errors.iter().next().map(|(_, m)| m));
     let text = match shown {
         None => String::new(),
-        Some(message) if errors.len() > 1 => format!("{message} (+{} more)", errors.len() - 1),
+        Some(message) if errors.len() > 1 => tr!(
+            "tvx-dialog-more-errors",
+            message = message,
+            count = errors.len() - 1
+        ),
         Some(message) => message.to_string(),
     };
     if let Some(line) = view::<ErrorLine>(dialog, line) {
@@ -1524,11 +1539,9 @@ impl<'a> Builder<'a> {
                 }
                 group.add(tree)
             }
-            Kind::Line { style, color } => group.add(LineView::new(
-                bounds,
-                *style,
-                color.map(tv_color),
-            )),
+            Kind::Line { style, color } => {
+                group.add(LineView::new(bounds, *style, color.map(tv_color)))
+            }
             Kind::ErrorLine {} => {
                 let mut line = ErrorLine::new();
                 line.set_bounds(bounds);

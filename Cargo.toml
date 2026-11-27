@@ -52,7 +52,10 @@ chrono = "0.4.45"
 flate2 = "1"
 
 [features]
-default = ["chrono"]
+default = ["chrono", "i18n"]
+# Translations with Project Fluent: forwarded to turbo-vision. Off, the
+# messages are still looked up, as plain text (no plurals or selectors).
+i18n = ["turbo-vision/i18n"]
 # Forms described as JSON and answered as JSON (`forms::json`), for an agent or
 # an MCP tool that needs a person to fill something in.
 json = ["dep:serde_json"]
@@ -214,3 +217,8 @@ cast_sign_loss = "allow"
 cast_precision_loss = "allow"
 # Long render/parse functions in the graphics module and the kitty examples.
 too_many_lines = "allow"
+
+# TEMPORARY, remove when turbo-vision 4.2 (the first release with the `i18n`
+# module, turbo-vision-4-rust#133) is on crates.io, and require it above.
+[patch.crates-io]
+turbo-vision = { git = "https://github.com/aovestdipaperino/turbo-vision-4-rust", branch = "main" }

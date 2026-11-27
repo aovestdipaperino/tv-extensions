@@ -81,6 +81,7 @@
 //! they are.
 
 use super::{Cell, Form, Item, Line, find_view_mut, focus_view, focused_view, size};
+use crate::i18n::tr;
 use std::cell::Cell as StdCell;
 use std::fmt;
 use turbo_vision::app::{Application, ModalTick};
@@ -283,7 +284,7 @@ macro_rules! whole_numbers {
                 text.trim()
                     .parse()
                     .ok()
-                    .ok_or_else(|| "must be a whole number".to_string())
+                    .ok_or_else(|| tr!("tvx-form-must-be-whole-number"))
             }
             fn width() -> Option<i16> {
                 Some(12)
@@ -308,7 +309,7 @@ macro_rules! numbers {
                 text.trim()
                     .parse()
                     .ok()
-                    .ok_or_else(|| "must be a number".to_string())
+                    .ok_or_else(|| tr!("tvx-form-must-be-number"))
             }
             fn width() -> Option<i16> {
                 Some(14)
@@ -330,7 +331,7 @@ impl TextValue for chrono::NaiveDate {
     fn from_text(text: &str) -> Result<Self, String> {
         chrono::NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d")
             .ok()
-            .ok_or_else(|| "must be a date like 2026-12-31".to_string())
+            .ok_or_else(|| tr!("tvx-form-must-be-date"))
     }
 
     fn width() -> Option<i16> {
@@ -353,7 +354,7 @@ impl TextValue for chrono::NaiveTime {
         chrono::NaiveTime::parse_from_str(text, "%H:%M")
             .or_else(|_| chrono::NaiveTime::parse_from_str(text, "%H:%M:%S"))
             .ok()
-            .ok_or_else(|| "must be a time like 14:30".to_string())
+            .ok_or_else(|| tr!("tvx-form-must-be-time"))
     }
 
     fn width() -> Option<i16> {
@@ -477,7 +478,7 @@ impl<R, V: View + 'static, T> Binding<R> for Bound<R, V, T> {
             self.rules
                 .required_message
                 .clone()
-                .unwrap_or_else(|| format!("{} is required", self.name))
+                .unwrap_or_else(|| tr!("tvx-form-required", name = &self.name))
         };
         if raw.empty && self.rules.required {
             return Err(required());
@@ -487,11 +488,9 @@ impl<R, V: View + 'static, T> Binding<R> for Bound<R, V, T> {
             // Empty, and the type has no empty value: a number, a date.
             Err(_) if raw.empty => return Err(required()),
             Err(should) => {
-                return Err(self
-                    .rules
-                    .invalid_message
-                    .clone()
-                    .unwrap_or_else(|| format!("{} {should}", self.name)));
+                return Err(self.rules.invalid_message.clone().unwrap_or_else(|| {
+                    tr!("tvx-form-problem", name = &self.name, problem = should)
+                }));
             }
         };
         for check in &self.rules.checks {
@@ -660,7 +659,8 @@ impl<R: 'static> Form<R> {
     ) -> Field<'_, R, bool> {
         let (view, read, write) = check_parts(caption);
         let mut field = self.bound(false, "", caption, view, lens, read, write);
-        field.rules().required_message = Some(format!("{} must be checked", field_name(caption)));
+        field.rules().required_message =
+            Some(tr!("tvx-form-must-be-checked", name = field_name(caption)));
         field
     }
 
@@ -808,7 +808,8 @@ impl<R: 'static> Line<'_, R> {
     ) -> Field<'_, R, bool> {
         let (view, read, write) = check_parts(caption);
         let mut field = self.form.bound(true, "", caption, view, lens, read, write);
-        field.rules().required_message = Some(format!("{} must be checked", field_name(caption)));
+        field.rules().required_message =
+            Some(tr!("tvx-form-must-be-checked", name = field_name(caption)));
         field
     }
 
@@ -857,7 +858,7 @@ fn input_parts<T: TextValue + 'static>() -> (InputLine, Reader<InputLine, T>, Wr
             value: if line.is_valid() {
                 T::from_text(text)
             } else {
-                Err("is not valid".to_string())
+                Err(tr!("tvx-form-not-valid"))
             },
         }
     };
@@ -891,7 +892,7 @@ fn choice_parts<T: Clone + PartialEq + 'static, S: Into<String>>(
         },
         None => Raw {
             empty: true,
-            value: Err("must be chosen".to_string()),
+            value: Err(tr!("tvx-form-must-be-chosen")),
         },
     };
     let write = move |c: &mut ComboBox, value: &T| {
@@ -921,7 +922,7 @@ fn field_name(label: &str) -> String {
     let name: String = label.chars().filter(|&c| c != '~').collect();
     let name = name.trim().trim_end_matches([':', '*']).trim();
     if name.is_empty() {
-        "This field".to_string()
+        tr!("tvx-form-this-field")
     } else {
         name.to_string()
     }
@@ -1407,6 +1408,29 @@ mod tests {
         let (mut e, _) = editor();
         e.load(ada());
         assert_eq!(e.read(), Ok(ada()));
+    }
+
+    #[test]
+    fn field_messages_follow_the_locale() {
+        turbo_vision::i18n::set_locale("es");
+        let (mut e, ids) = editor();
+        e.load(ada());
+        set_text(&mut e, ids.name, "   ");
+        set_text(&mut e, ids.age, "abc");
+        assert_eq!(
+            message(&mut e, ids.name).as_deref(),
+            Some("Name es obligatorio")
+        );
+        assert_eq!(
+            message(&mut e, ids.age).as_deref(),
+            Some("Age debe ser un número entero")
+        );
+        turbo_vision::i18n::set_locale("ca");
+        assert_eq!(
+            u8::from_text("300"),
+            Err("ha de ser un nombre enter".into())
+        );
+        turbo_vision::i18n::set_locale("en");
     }
 
     #[test]

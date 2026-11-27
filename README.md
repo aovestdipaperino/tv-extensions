@@ -175,6 +175,20 @@ let toppings = DualListBuilder::new()
 
 `cargo run --example dual_list --features native` shows it in a dialog, and `cargo run --example dual_list_form --features native` as one field of a larger form (a Django-style "Change user" page).
 
+## Translations
+
+The texts this crate shows (the CSV editor, form and dialog messages, the `AutoComplete` and `DualList` defaults, the log window) are looked up through turbo-vision's translation mechanism, so one language setting covers the framework, this crate and your application. English, Spanish and Catalan are built in; everything else falls back to English, so nothing changes until you choose a locale.
+
+```rust
+use turbo_vision::i18n;
+
+i18n::set_locale_from_env();       // or i18n::set_locale("ca")
+tv_extensions::i18n::register();   // only to put your own replacements after ours
+i18n::add_translations("de", include_str!("../locales/de/tv-extensions.ftl"))?;
+```
+
+Start a translation from `tv_extensions::i18n::built_in_source("en")`. Message ids begin with `tvx-`; the `~x~` hot key must be unique within each menu or dialog, and `turbo_vision::i18n::check_translation` and `check_hot_key_groups` check a file from a test. Choose the locale before building views: they keep the text they were built with.
+
 ## Key translation
 
 Turns a key name such as `"ctrl-s"` or `"enter"` into the `Event` turbo-vision expects — the form a host that is not a terminal (a web page, a WASM host) reports keys in. Always available, no feature flag.

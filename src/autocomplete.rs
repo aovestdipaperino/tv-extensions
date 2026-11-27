@@ -99,6 +99,7 @@
 //! combination; press OK with fields blank or holding unlisted text to see
 //! the error lines.
 
+use crate::i18n::tr;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -130,11 +131,11 @@ const ERROR_ATTR: u8 = 0xCF;
 
 /// The error line for an empty required field, unless
 /// [`AutoComplete::set_required_message`] says otherwise.
-const DEFAULT_REQUIRED_MESSAGE: &str = "A value is required";
+const REQUIRED_MESSAGE_ID: &str = "tvx-autocomplete-required";
 
 /// The error line for text that is not an item, unless
 /// [`AutoComplete::set_match_message`] says otherwise.
-const DEFAULT_MATCH_MESSAGE: &str = "Choose a value from the list";
+const MATCH_MESSAGE_ID: &str = "tvx-autocomplete-not-in-list";
 
 /// Palette inside a dialog: the field maps like `InputLine`, the list like
 /// `ListBox` (26 normal, 27 selected, 28 the divider colour for matches).
@@ -272,8 +273,8 @@ impl AutoComplete {
             rules: Rules::default(),
             refused: None,
             dirty: false,
-            required_message: DEFAULT_REQUIRED_MESSAGE.to_string(),
-            match_message: DEFAULT_MATCH_MESSAGE.to_string(),
+            required_message: tr!(REQUIRED_MESSAGE_ID),
+            match_message: tr!(MATCH_MESSAGE_ID),
         };
         auto.cursor_pos = char_len(&auto.text.borrow());
         auto.refilter();
@@ -677,7 +678,7 @@ impl AutoComplete {
         if self.filtered.is_empty() {
             let mut row = DrawBuffer::new(width);
             row.move_char(0, ' ', normal_attr, width);
-            row.move_str(0, "No matches", normal_attr);
+            row.move_str(0, &tr!("tvx-autocomplete-no-matches"), normal_attr);
             write_line_to_terminal(terminal, 0, top, &row);
             return;
         }
