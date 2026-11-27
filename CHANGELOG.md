@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] - 2026-11-27
 
 Requires turbo-vision 4.2.0, the first release with the `i18n` module.
 
