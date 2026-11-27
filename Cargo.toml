@@ -26,7 +26,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 # host-driven hooks this crate depends on. 4.0.1 is required: it is the
 # version where Desktop (and TabbedPane/SplitPane) forward update_cursor,
 # which HostInput::cursor()/Session::cursor() depend on.
-turbo-vision = { version = "4.1.0", default-features = false }
+turbo-vision = { version = "4.2.0", default-features = false }
 tracing = { version = "0.1", optional = true }
 base64 = { version = "0.22", optional = true }
 chrono = { version = "0.4.45", optional = true }
@@ -43,7 +43,7 @@ ssh-key = { version = "0.6", optional = true }
 unicode-width = { version = "0.1", optional = true }
 
 [dev-dependencies]
-turbo-vision = { version = "4.1.0", default-features = false, features = ["test-util"] }
+turbo-vision = { version = "4.2.0", default-features = false, features = ["test-util"] }
 tempfile = "3"
 # Used by the kitty_biorhythm example only; not part of the library's API.
 chrono = "0.4.45"
@@ -217,8 +217,3 @@ cast_sign_loss = "allow"
 cast_precision_loss = "allow"
 # Long render/parse functions in the graphics module and the kitty examples.
 too_many_lines = "allow"
-
-# TEMPORARY, remove when turbo-vision 4.2 (the first release with the `i18n`
-# module, turbo-vision-4-rust#133) is on crates.io, and require it above.
-[patch.crates-io]
-turbo-vision = { git = "https://github.com/aovestdipaperino/turbo-vision-4-rust", branch = "main" }

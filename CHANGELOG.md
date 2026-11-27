@@ -2,10 +2,7 @@
 
 ## [Unreleased]
 
-Requires the turbo-vision release that has the `i18n` module (after 4.1.0).
-Until it is on crates.io, `Cargo.toml` takes turbo-vision from its `main`
-branch through a temporary `[patch.crates-io]`; remove that when the
-release is out and raise the version above.
+Requires turbo-vision 4.2.0, the first release with the `i18n` module.
 
 ### Changed
 
